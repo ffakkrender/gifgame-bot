@@ -1,7 +1,6 @@
 import os
 import asyncio
 import random
-import time
 import json
 from datetime import datetime, timedelta
 
@@ -833,8 +832,8 @@ def get_roulette_kb():
         [InlineKeyboardButton(text="🟢 ЗЕРО", callback_data="rl_z")]
     ])
 
-# Классические красные номера в европейской рулетке
-RED_NUMBERS = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
+# Классические красные номера в европейской рулетке (включая 17)
+RED_NUMBERS = {1, 3, 5, 7, 9, 12, 14, 16, 17, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
 
 @dp.message(F.text.lower().startswith("рул"))
 async def game_roulette_start(message: Message):
@@ -842,7 +841,7 @@ async def game_roulette_start(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
     if len(parts) < 2: 
-        return await message.reply("⚠️ Пример: `рул 100к ч` немесе `рул 100к 10-17`", parse_mode="Markdown")
+        return await message.reply("⚠️ Пример: `рул 100к к` немесе `рул 100к 10-17`", parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
     if err: return await message.reply(err)
