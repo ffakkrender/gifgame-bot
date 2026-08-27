@@ -273,6 +273,7 @@ async def cmd_admin_reset_all(message: Message):
     save_data()
     await message.reply("⚠️ **Глобальный сброс!** Балансы и банки абсолютно всех игроков обнулены (0).", parse_mode="Markdown")
 
+@dp.message(F.text.lower() == "[reset limit]")
 @dp.message(F.text.lower() == "reset limit")
 async def cmd_admin_reset_limit(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -644,9 +645,16 @@ RISE_STAGES = [
     {"step": 7, "bombs": 1, "gems": 4, "mult": 1000.0},
 ]
 
-def get_rise_kb(stage_idx: int):
-    total_cells = RISE_STAGES[stage_idx]["bombs"] + RISE_STAGES[stage_idx]["gems"]
-    row = [InlineKeyboardButton(text="❔", callback_data=f"rise_cell_{i}") for i in range(total_cells)]
+def get_rise_kb(stage_idx: int, revealed=None):
+    st = RISE_STAGES[stage_idx]
+    total_cells = st["bombs"] + st["gems"]
+    row = []
+    for i in range(total_cells):
+        if revealed and i in revealed:
+            txt = revealed[i]  # 💎 немесе 💣
+        else:
+            txt = "❓"
+        row.append(InlineKeyboardButton(text=txt, callback_data=f"rise_cell_{i}"))
     kb = [row]
     if stage_idx > 0:
         kb.append([InlineKeyboardButton(text="💰 Забрать выигрыш", callback_data="rise_take")])
@@ -666,13 +674,19 @@ async def game_rise_start(message: Message):
     user["balance"] -= stake
     save_data()
     
+    # Бұл ойыншыға осы сатыдағы бомбалар мен алмаздарды алдын ала генерациялап береміз
+    st = RISE_STAGES[0]
+    total_cells = st["bombs"] + st["gems"]
+    bomb_indices = set(random.sample(range(total_cells), st["bombs"]))
+    
     active_rise[user_id] = {
         "stake": stake,
         "stage": 0,
-        "current_mult": 1.0
+        "bombs": bomb_indices,
+        "total_cells": total_cells,
+        "revealed": {}
     }
     
-    st = RISE_STAGES[0]
     await message.reply(
         f"🚀 Ставка райз: **{stake:,}**\n\n"
         f"❔ ❔ ❔ ❔ ❔ 1-шы саты | {st['bombs']} бомба, {st['gems']} алмаз | **{st['mult']}x**\n\n"
@@ -706,40 +720,70 @@ async def process_rise_action(cb: CallbackQuery):
     if cb.data.startswith("rise_cell_"):
         stage_idx = g["stage"]
         st = RISE_STAGES[stage_idx]
-        total_cells = st["bombs"] + st["gems"]
-        
-        bomb_indices = set(random.sample(range(total_cells), st["bombs"]))
         cell_idx = int(cb.data.split("_")[2])
         
-        if cell_idx in bomb_indices:
+        if cell_idx in g["revealed"]:
+            return await cb.answer("Бұл ұяшық бұрын ашылған!", show_alert=True)
+            
+        if cell_idx in g["bombs"]:
+            # Бомба шықты! Барлық бомбалар мен алмаздарды көрсетеміз
+            for i in range(g["total_cells"]):
+                if i in g["bombs"]:
+                    g["revealed"][i] = "💣"
+                else:
+                    g["revealed"][i] = "💎"
+            
             stake_lost = g["stake"]
             add_leaderboard_profit(uid, -stake_lost)
+            
+            kb = get_rise_kb(stage_idx, g["revealed"])
+            # Забрать батырмасын өшіреміз
+            kb = InlineKeyboardMarkup(inline_keyboard=[row for row in kb.inline_keyboard if not any(btn.callback_data == "rise_take" for btn in row)])
+            
             del active_rise[uid]
             return await cb.message.edit_text(
                 f"💥 **Райз ({stage_idx + 1}-саты):** Вы попали на бомбу 💣!\n"
-                f"💔 Проигрыш: **-{stake_lost:,}**", parse_mode="Markdown"
+                f"💔 Проигрыш: **-{stake_lost:,}**", reply_markup=kb, parse_mode="Markdown"
             )
         else:
-            g["stage"] += 1
-            if g["stage"] >= len(RISE_STAGES):
-                mult = RISE_STAGES[-1]["mult"]
-                win = int(g["stake"] * mult)
-                user["balance"] += win
-                profit = win - g["stake"]
-                add_leaderboard_profit(uid, profit)
-                save_data()
-                del active_rise[uid]
-                return await cb.message.edit_text(f"🏆 **ГРАНДИОЗНАЯ ПОБЕДА!** Вы прошли все 7 саты!\nВыигрыш: **+{win:,}** ({mult}x)", parse_mode="Markdown")
+            # Алмаз тапты! Осы ұяшықты ашық деп белгілейміз
+            g["revealed"][cell_idx] = "💎"
             
-            next_st = RISE_STAGES[g["stage"]]
-            await cb.message.edit_text(
-                f"🚀 Ставка райз: **{g['stake']:,}**\n"
-                f"✅ {g['stage']}-ші саты сәтті өтті! ({RISE_STAGES[g['stage']-1]['mult']}x)\n\n"
-                f"Келесі саты: {g['stage']+1}-ші саты | {next_st['bombs']} бомба, {next_st['gems']} алмаз | **{next_st['mult']}x**\n"
-                f"Таңдаңыз келесі ұяшықты:",
-                reply_markup=get_rise_kb(g["stage"]), parse_mode="Markdown"
-            )
-            await cb.answer("Алмаз таптыңыз! 💎")
+            # Тексеру: осы сатыдағы барлық алмаздар табылды ма, әлде келесі сатыға өте ме?
+            gems_found = sum(1 for idx, symbol in g["revealed"].items() if symbol == "💎" and idx not in g["bombs"])
+            
+            if gems_found >= st["gems"]:
+                # Саты сәтті аяқталды, келесі сатыға өту немесе жеңіс
+                g["stage"] += 1
+                if g["stage"] >= len(RISE_STAGES):
+                    mult = RISE_STAGES[-1]["mult"]
+                    win = int(g["stake"] * mult)
+                    user["balance"] += win
+                    profit = win - g["stake"]
+                    add_leaderboard_profit(uid, profit)
+                    save_data()
+                    del active_rise[uid]
+                    return await cb.message.edit_text(f"🏆 **ГРАНДИОЗНАЯ ПОБЕДА!** Вы прошли все 7 саты!\nВыигрыш: **+{win:,}** ({mult}x)", parse_mode="Markdown")
+                
+                # Жаңа сатыға дайындық
+                next_st = RISE_STAGES[g["stage"]]
+                total_cells = next_st["bombs"] + next_st["gems"]
+                g["bombs"] = set(random.sample(range(total_cells), next_st["bombs"]))
+                g["total_cells"] = total_cells
+                g["revealed"] = {}
+                
+                await cb.message.edit_text(
+                    f"🚀 Ставка райз: **{g['stake']:,}**\n"
+                    f"✅ {g['stage']}-ші саты сәтті өтті! ({RISE_STAGES[g['stage']-1]['mult']}x)\n\n"
+                    f"Келесі саты: {g['stage']+1}-ші саты | {next_st['bombs']} бомба, {next_st['gems']} алмаз | **{next_st['mult']}x**\n"
+                    f"Таңдаңыз келесі ұяшықты:",
+                    reply_markup=get_rise_kb(g["stage"]), parse_mode="Markdown"
+                )
+                await cb.answer("Саты өтті! Келесі сатыға өттіңіз 🚀")
+            else:
+                # Әлі де осы сатыда ұяшықтар бар
+                await cb.message.edit_reply_markup(reply_markup=get_rise_kb(stage_idx, g["revealed"]))
+                await cb.answer("Алмаз таптыңыз! 💎")
 
 # --- ИГРА РУЛЕТКА ---
 
@@ -981,14 +1025,19 @@ async def game_slots(message: Message):
 
 # --- МИНЫ ---
 
-def get_mines_kb(user_id: int):
+def get_mines_kb(user_id: int, revealed=None):
     g = active_mines[user_id]
     kb = []
     for r in range(5):
         row = []
         for c in range(5):
             idx = r * 5 + c
-            txt = "💎" if idx in g["open"] else "❓"
+            if revealed and idx in revealed:
+                txt = revealed[idx]
+            elif idx in g["open"]:
+                txt = "💎"
+            else:
+                txt = "❓"
             row.append(InlineKeyboardButton(text=txt, callback_data=f"m_step_{idx}"))
         kb.append(row)
     win = int(g["stake"] * g["mult"])
@@ -1020,11 +1069,26 @@ async def m_step(cb: CallbackQuery):
     g = active_mines[uid]
     idx = int(cb.data.split("_")[2])
     if idx in g["open"]: return await cb.answer()
+    
     if idx in g["bombs"]:
+        # Бомба жарылды! Барлық бомбалар мен алмаздарды көрсетеміз
+        revealed = {}
+        for i in range(25):
+            if i in g["bombs"]:
+                revealed[i] = "💣"
+            else:
+                revealed[i] = "💎"
+                
         stake_lost = g["stake"]
         add_leaderboard_profit(uid, -stake_lost)
+        
+        kb = get_mines_kb(uid, revealed)
+        # Забрать батырмасын өшіреміз
+        kb = InlineKeyboardMarkup(inline_keyboard=[row for row in kb.inline_keyboard if not any(btn.callback_data == "m_take" for btn in row)])
+        
         del active_mines[uid]
-        return await cb.message.edit_text(f"💥 **ВЗРЫВ!** Потеряно: -{stake_lost:,}")
+        return await cb.message.edit_text(f"💥 **ВЗРЫВ!** Потеряно: -{stake_lost:,}", reply_markup=kb, parse_mode="Markdown")
+        
     g["open"].add(idx)
     g["mult"] += g["step_add"]
     await cb.message.edit_reply_markup(reply_markup=get_mines_kb(uid))
