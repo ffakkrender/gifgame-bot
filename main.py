@@ -164,12 +164,12 @@ def main_keyboard():
         keyboard=[
             [KeyboardButton(text="👤 Профиль"), KeyboardButton(text="🎁 Бонус")],
             [KeyboardButton(text="🏆 Топ"), KeyboardButton(text="📊 ЛБ")],
-            [KeyboardButton(text="🎰 Игры"), KeyboardButton(text="🏦 Банк")]
+            [KeyboardButton(text="🎰 Игры"), KeyboardButton(text="🏦 Банк"), KeyboardButton(text="🆘 Помощь")]
         ],
         resize_keyboard=True
     )
 
-# --- ЛИДЕРБОРД (ЛБ) - ТЕК ПЛЮСТЕГІЛЕР ---
+# --- ЛИДЕРБОРД (ЛБ) ---
 
 @dp.message(F.text.in_({"📊 ЛБ", "лб", "lb"}))
 async def cmd_leaderboard(message: Message):
@@ -223,7 +223,7 @@ async def cb_refresh_lb(cb: CallbackQuery):
         pass
     await cb.answer("ЛБ обновлен!")
 
-# --- АДМИНКА, ПЕРЕВОДЫ, ТОП, ПРОМО ---
+# --- АДМИНКА И КОМАНДЫ ---
 
 @dp.message(F.text.lower().startswith("выдать"))
 async def cmd_admin_give(message: Message):
@@ -275,18 +275,51 @@ async def cmd_admin_reset_all(message: Message):
     save_data()
     await message.reply("⚠️ **Глобальный сброс!** Балансы и банки абсолютно всех игроков обнулены (0).", parse_mode="Markdown")
 
-@dp.message(F.text.lower().in_({"[reset limit]", "reset limit"}))
-async def cmd_admin_reset_limit(message: Message):
+@dp.message(F.text.lower() == "reset kuroven")
+async def cmd_admin_reset_kuroven(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
     if not message.reply_to_message:
-        return await message.reply("⚠️ **Ответьте (Reply) на сообщение игрока для сброса лимита!**", parse_mode="Markdown")
+        return await message.reply("⚠️ **Ответьте на сообщение игрока!**", parse_mode="Markdown")
     target_id = message.reply_to_message.from_user.id
     target_user = get_user(target_id, message.reply_to_message.from_user.first_name)
     target_user["transfer_limit_lvl"] = 1
     target_user["transfer_limit"] = 50000
     save_data()
-    await message.reply(f"🔄 Игроку **{target_user['name']}** лимит перевода сброшен до базового (1-й уровень, 50,000 гиф).", parse_mode="Markdown")
+    await message.reply(f"🔄 Уровень лимита игрока **{target_user['name']}** сброшен до базового (1-й уровень, лимит 50,000 гиф).", parse_mode="Markdown")
+
+@dp.message(F.text.lower() == "max kuroven")
+async def cmd_admin_max_kuroven(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    if not message.reply_to_message:
+        return await message.reply("⚠️ **Ответьте на сообщение игрока!**", parse_mode="Markdown")
+    target_id = message.reply_to_message.from_user.id
+    target_user = get_user(target_id, message.reply_to_message.from_user.first_name)
+    target_user["transfer_limit_lvl"] = 10
+    target_user["transfer_limit"] = 999999999999999
+    save_data()
+    await message.reply(f"🚀 Уровень лимита игрока **{target_user['name']}** повышен до 10-го (бесконечный лимит).", parse_mode="Markdown")
+
+@dp.message(F.text.lower().startswith("global nakid"))
+async def cmd_admin_global_nakid(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    parts = message.text.split()
+    if len(parts) < 3:
+        return await message.reply("⚠️ Пример: `global nakid 100к`", parse_mode="Markdown")
+    amount, err = parse_stake(parts[2], 999_999_999_999_999_999)
+    if err:
+        return await message.reply(err)
+    
+    admin_id = message.from_user.id
+    count = 0
+    for uid in db:
+        if uid != admin_id:
+            db[uid]["balance"] += amount
+            count += 1
+    save_data()
+    await message.reply(f"🌍 Всем игрокам ({count} чел., исключая вас) зачислено по **{amount:,}** гиф!", parse_mode="Markdown")
 
 @dp.message(F.text.lower().startswith("дать"))
 async def cmd_transfer(message: Message):
@@ -301,6 +334,8 @@ async def cmd_transfer(message: Message):
         return await message.reply(f"⚠️ Ваш лимит перевода: **{user['transfer_limit']:,} гиф**!\nЧтобы повысить лимит: `куровень`", parse_mode="Markdown")
         
     target_id = message.reply_to_message.from_user.id
+    if target_id == message.from_user.id:
+        return await message.reply("⚠️ Нельзя переводить самому себе!")
     target_user = get_user(target_id, message.reply_to_message.from_user.first_name)
     user["balance"] -= amount
     target_user["balance"] += amount
@@ -628,16 +663,16 @@ async def process_hilo_action(cb: CallbackQuery):
         )
         await cb.answer("Неверно!", show_alert=True)
 
-# --- ИГРА РАЙЗ (РЗ) - 5 КНОПОК ӘР САТЫДА ---
+# --- ИГРА РАЙЗ (РЗ) - 1 АЛМАЗДАН ТАБУ ---
 
 RISE_STAGES = [
-    {"step": 1, "bombs": 1, "gems": 4, "mult": 1.44},
-    {"step": 2, "bombs": 2, "gems": 3, "mult": 2.11},
-    {"step": 3, "bombs": 3, "gems": 2, "mult": 4.78},
+    {"step": 1, "bombs": 4, "gems": 1, "mult": 1.44},
+    {"step": 2, "bombs": 4, "gems": 1, "mult": 2.11},
+    {"step": 3, "bombs": 4, "gems": 1, "mult": 4.78},
     {"step": 4, "bombs": 4, "gems": 1, "mult": 21.67},
-    {"step": 5, "bombs": 3, "gems": 2, "mult": 100.01},
-    {"step": 6, "bombs": 2, "gems": 3, "mult": 500.8},
-    {"step": 7, "bombs": 1, "gems": 4, "mult": 1000.0},
+    {"step": 5, "bombs": 4, "gems": 1, "mult": 100.01},
+    {"step": 6, "bombs": 4, "gems": 1, "mult": 500.8},
+    {"step": 7, "bombs": 4, "gems": 1, "mult": 1000.0},
 ]
 
 def get_rise_kb(stage_idx: int, revealed=None):
@@ -681,6 +716,7 @@ async def game_rise_start(message: Message):
     }
     
     await message.reply(
+        f"Игра #1 в Райз началась!\n\n"
         f"🚀 Ставка райз: **{stake:,}**\n\n"
         f"❓ ❓ ❓ ❓ ❓\n"
         f"1-й этап | {st['bombs']} бомба, {st['gems']} алмаз | **{st['mult']}x**\n\n"
@@ -709,7 +745,7 @@ async def process_rise_action(cb: CallbackQuery):
             add_leaderboard_profit(uid, profit)
         save_data()
         del active_rise[uid]
-        return await cb.message.edit_text(f"💰 **Райз завершена!** Вы забрали выигрыш: **+{win:,}** (Множитель: {mult}x)", parse_mode="Markdown")
+        return await cb.message.edit_text(f"Игра #1 в Райз завершена!\n\n💰 Вы забрали выигрыш: **+{win:,}** (Множитель: {mult}x)", parse_mode="Markdown")
     
     if cb.data.startswith("rise_cell_"):
         stage_idx = g["stage"]
@@ -735,6 +771,7 @@ async def process_rise_action(cb: CallbackQuery):
             full_history_text = "\n".join(g["history_lines"])
             del active_rise[uid]
             return await cb.message.edit_text(
+                f"Игра #1 в Райз продолжается!\n\n"
                 f"💥 **Райз ({stage_idx + 1}-й этап):** Вы попали на бомбу 💣!\n\n"
                 f"{full_history_text}\n\n"
                 f"💔 Проигрыш: **-{stake_lost:,}**", parse_mode="Markdown"
@@ -763,7 +800,7 @@ async def process_rise_action(cb: CallbackQuery):
                     save_data()
                     full_history_text = "\n".join(g["history_lines"])
                     del active_rise[uid]
-                    return await cb.message.edit_text(f"🏆 **ГРАНДИОЗНАЯ ПОБЕДА!** Вы прошли все этапы!\n\n{full_history_text}\n\nВыигрыш: **+{win:,}** ({mult}x)", parse_mode="Markdown")
+                    return await cb.message.edit_text(f"Игра #1 в Райз завершена!\n\n🏆 **ГРАНДИОЗНАЯ ПОБЕДА!** Вы прошли все этапы!\n\n{full_history_text}\n\nВыигрыш: **+{win:,}** ({mult}x)", parse_mode="Markdown")
                 
                 next_st = RISE_STAGES[g["stage"]]
                 g["bombs"] = set(random.sample(range(5), next_st["bombs"]))
@@ -771,6 +808,7 @@ async def process_rise_action(cb: CallbackQuery):
                 
                 full_history_text = "\n".join(g["history_lines"])
                 await cb.message.edit_text(
+                    f"Игра #1 в Райз продолжается!\n\n"
                     f"🚀 Ставка райз: **{g['stake']:,}**\n\n"
                     f"{full_history_text}\n\n"
                     f"❓ ❓ ❓ ❓ ❓\n"
@@ -1021,7 +1059,7 @@ async def game_slots(message: Message):
         
     await msg.edit_text(txt, parse_mode="Markdown")
 
-# --- МИНЫ ---
+# --- МИНЫ (Отображение ячеек при завершении) ---
 
 def get_mines_kb(user_id: int, revealed=None):
     g = active_mines[user_id]
@@ -1083,7 +1121,7 @@ async def m_step(cb: CallbackQuery):
         kb = InlineKeyboardMarkup(inline_keyboard=[row for row in kb.inline_keyboard if not any(btn.callback_data == "m_take" for btn in row)])
         
         del active_mines[uid]
-        return await cb.message.edit_text(f"💥 **ВЗРЫВ!** Потеряно: -{stake_lost:,}", reply_markup=kb, parse_mode="Markdown")
+        return await cb.message.edit_text(f"💥 **ВЗРЫВ! Игра окончена.**\nРасположение мин и алмазов показано ниже:\n\nПотеряно: -{stake_lost:,}", reply_markup=kb, parse_mode="Markdown")
         
     g["open"].add(idx)
     g["mult"] += g["step_add"]
@@ -1096,14 +1134,26 @@ async def m_take(cb: CallbackQuery):
     if uid not in active_mines: return await cb.answer("Игра уже завершена!")
     g = active_mines[uid]
     user = get_user(uid, cb.from_user.first_name)
+    
+    revealed = {}
+    for i in range(25):
+        if i in g["bombs"]:
+            revealed[i] = "💣"
+        else:
+            revealed[i] = "💎"
+
     win = int(g["stake"] * g["mult"])
     user["balance"] += win
     profit = win - g["stake"]
     if profit > 0:
         add_leaderboard_profit(uid, profit)
     save_data()
+    
+    kb = get_mines_kb(uid, revealed)
+    kb = InlineKeyboardMarkup(inline_keyboard=[row for row in kb.inline_keyboard if not any(btn.callback_data == "m_take" for btn in row)])
+    
     del active_mines[uid]
-    await cb.message.edit_text(f"💎 **Выигрыш забрали!** Награда: **+{win:,}**", parse_mode="Markdown")
+    await cb.message.edit_text(f"💎 **Выигрыш забрали!**\nРасположение мин и алмазов:\n\nНаграда: **+{win:,}**", reply_markup=kb, parse_mode="Markdown")
 
 # --- БЛЭКДЖЕК ---
 
@@ -1184,7 +1234,80 @@ async def bj_stand(cb: CallbackQuery):
     await cb.message.edit_text(res, parse_mode="Markdown")
     await cb.answer()
 
-@dp.message(F.text.in_({"/start", "меню", "Меню", "🆘 Помощь", "помощь"}))
+# --- ПОМОЩЬ И КНОПКИ ---
+
+@dp.message(F.text.in_({"🆘 Помощь", "помощь"}))
+async def cmd_help(message: Message):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Игровой зал", callback_data="help_games")],
+        [InlineKeyboardButton(text="Базовые команды", callback_data="help_base")],
+        [InlineKeyboardButton(text="Связываться с админами", callback_data="help_admins")]
+    ])
+    await message.reply("🆘 **Меню помощи:**\nВыберите интересующий вас раздел:", reply_markup=kb, parse_mode="Markdown")
+
+@dp.callback_query(F.data.startswith("help_"))
+async def process_help_callback(cb: CallbackQuery):
+    action = cb.data.replace("help_", "")
+    if action == "games":
+        text = (
+            "🎮 **Игровой зал (Список игр):**\n\n"
+            "• `рз [ставка]` — Райз (поиск 1 алмаза)\n"
+            "• `х50 [ставка] [ч/ф/к/з]` — Х50 (цвета)\n"
+            "• `хило [ставка]` — HiLo #1 (карты)\n"
+            "• `рул [ставка]` — Рулетка\n"
+            "• `охота [ставка]` — Охота\n"
+            "• `слоты [ставка]` — Слоты (джекпот)\n"
+            "• `мины [ставка] [бомбы]` — Минное поле\n"
+            "• `бж [ставка]` — Блэкджек\n"
+            "• `баскетбол [ставка] [мимо/попадание]` — Баскетбол"
+        )
+    elif action == "base":
+        text = (
+            "📋 **Базовые команды:**\n\n"
+            "• `баланс` (или `б`) — проверить баланс\n"
+            "• `банк` — проверить банк\n"
+            "• `профиль` — информация об аккаунте\n"
+            "• `топ` — топ богачей\n"
+            "• `лб` — таблица лидеров\n"
+            "• `бонус` — получить бонус (раз в 12ч)\n"
+            "• `куровень` — повысить лимит перевода\n"
+            "• `дать [сумма]` — перевести игроку (ответом)\n"
+            "• `банк положить [сумма]` — положить в банк\n"
+            "• `банк снять [сумма]` — снять из банка\n"
+            "• `промо [код]` — активировать промокод"
+        )
+    elif action == "admins":
+        text = (
+            "📞 **Связываться с админами:**\n\n"
+            "Владелец: @oyxenn\n"
+            "Наш чат: https://t.me/+c2XxfkFvgpU5ZmVh"
+        )
+    else:
+        return
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="help_back")]
+    ])
+    try:
+        await cb.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    except Exception:
+        pass
+    await cb.answer()
+
+@dp.callback_query(F.data == "help_back")
+async def process_help_back(cb: CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Игровой зал", callback_data="help_games")],
+        [InlineKeyboardButton(text="Базовые команды", callback_data="help_base")],
+        [InlineKeyboardButton(text="Связываться с админами", callback_data="help_admins")]
+    ])
+    try:
+        await cb.message.edit_text("🆘 **Меню помощи:**\nВыберите интересующий вас раздел:", reply_markup=kb, parse_mode="Markdown")
+    except Exception:
+        pass
+    await cb.answer()
+
+@dp.message(F.text.in_({"/start", "меню", "Меню", "🎰 Игры"}))
 async def cmd_start(message: Message):
     get_user(message.from_user.id, message.from_user.first_name)
     await message.reply(
@@ -1207,7 +1330,7 @@ async def cmd_start(message: Message):
 
 async def main():
     os.system('cls' if os.name == 'nt' else 'clear')
-    print("🚀 Gifgame_bot обновлен (без прокси)!")
+    print("🚀 Gifgame_bot обновлен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
