@@ -663,16 +663,16 @@ async def process_hilo_action(cb: CallbackQuery):
         )
         await cb.answer("Неверно!", show_alert=True)
 
-# --- ИГРА РАЙЗ (РЗ) - 1 АЛМАЗДАН ТАБУ ---
+# --- ИГРА РАЙЗ (РЗ) С 7 ЭТАЖАМИ ПО ВАШИМ ПАРАМЕТРАМ ---
 
 RISE_STAGES = [
-    {"step": 1, "bombs": 4, "gems": 1, "mult": 1.44},
-    {"step": 2, "bombs": 4, "gems": 1, "mult": 2.11},
-    {"step": 3, "bombs": 4, "gems": 1, "mult": 4.78},
-    {"step": 4, "bombs": 4, "gems": 1, "mult": 21.67},
-    {"step": 5, "bombs": 4, "gems": 1, "mult": 100.01},
-    {"step": 6, "bombs": 4, "gems": 1, "mult": 500.8},
-    {"step": 7, "bombs": 4, "gems": 1, "mult": 1000.0},
+    {"step": 1, "bombs": 1, "gems": 4, "mult": 1.25},
+    {"step": 2, "bombs": 2, "gems": 3, "mult": 1.65},
+    {"step": 3, "bombs": 3, "gems": 2, "mult": 2.30},
+    {"step": 4, "bombs": 3, "gems": 2, "mult": 3.45},
+    {"step": 5, "bombs": 4, "gems": 1, "mult": 5.50},
+    {"step": 6, "bombs": 3, "gems": 2, "mult": 9.20},
+    {"step": 7, "bombs": 3, "gems": 2, "mult": 16.50}
 ]
 
 def get_rise_kb(stage_idx: int, revealed=None):
@@ -716,10 +716,10 @@ async def game_rise_start(message: Message):
     }
     
     await message.reply(
-        f"Игра #1 в Райз началась!\n\n"
+        f"Игра Райз началась!\n\n"
         f"🚀 Ставка райз: **{stake:,}**\n\n"
         f"❓ ❓ ❓ ❓ ❓\n"
-        f"1-й этап | {st['bombs']} бомба, {st['gems']} алмаз | **{st['mult']}x**\n\n"
+        f"1-й этап | {st['bombs']} бомба((-ы)), {st['gems']} алмаз((-а)) | **{st['mult']}x**\n\n"
         f"Выберите ячейку:",
         reply_markup=get_rise_kb(0), parse_mode="Markdown"
     )
@@ -745,7 +745,7 @@ async def process_rise_action(cb: CallbackQuery):
             add_leaderboard_profit(uid, profit)
         save_data()
         del active_rise[uid]
-        return await cb.message.edit_text(f"Игра #1 в Райз завершена!\n\n💰 Вы забрали выигрыш: **+{win:,}** (Множитель: {mult}x)", parse_mode="Markdown")
+        return await cb.message.edit_text(f"Игра Райз завершена!\n\n💰 Вы забрали выигрыш: **+{win:,}** (Множитель: {mult}x)", parse_mode="Markdown")
     
     if cb.data.startswith("rise_cell_"):
         stage_idx = g["stage"]
@@ -771,7 +771,7 @@ async def process_rise_action(cb: CallbackQuery):
             full_history_text = "\n".join(g["history_lines"])
             del active_rise[uid]
             return await cb.message.edit_text(
-                f"Игра #1 в Райз продолжается!\n\n"
+                f"Игра Райз продолжается!\n\n"
                 f"💥 **Райз ({stage_idx + 1}-й этап):** Вы попали на бомбу 💣!\n\n"
                 f"{full_history_text}\n\n"
                 f"💔 Проигрыш: **-{stake_lost:,}**", parse_mode="Markdown"
@@ -800,7 +800,7 @@ async def process_rise_action(cb: CallbackQuery):
                     save_data()
                     full_history_text = "\n".join(g["history_lines"])
                     del active_rise[uid]
-                    return await cb.message.edit_text(f"Игра #1 в Райз завершена!\n\n🏆 **ГРАНДИОЗНАЯ ПОБЕДА!** Вы прошли все этапы!\n\n{full_history_text}\n\nВыигрыш: **+{win:,}** ({mult}x)", parse_mode="Markdown")
+                    return await cb.message.edit_text(f"Игра Райз завершена!\n\n🏆 **ГРАНДИОЗНАЯ ПОБЕДА!** Вы прошли все 7 этапов!\n\n{full_history_text}\n\nВыигрыш: **+{win:,}** ({mult}x)", parse_mode="Markdown")
                 
                 next_st = RISE_STAGES[g["stage"]]
                 g["bombs"] = set(random.sample(range(5), next_st["bombs"]))
@@ -808,7 +808,7 @@ async def process_rise_action(cb: CallbackQuery):
                 
                 full_history_text = "\n".join(g["history_lines"])
                 await cb.message.edit_text(
-                    f"Игра #1 в Райз продолжается!\n\n"
+                    f"Игра Райз продолжается!\n\n"
                     f"🚀 Ставка райз: **{g['stake']:,}**\n\n"
                     f"{full_history_text}\n\n"
                     f"❓ ❓ ❓ ❓ ❓\n"
@@ -821,7 +821,7 @@ async def process_rise_action(cb: CallbackQuery):
                 await cb.message.edit_reply_markup(reply_markup=get_rise_kb(stage_idx, g["revealed"]))
                 await cb.answer("💎 Нашли алмаз!")
 
-# --- ИГРА РУЛЕТКА ---
+# --- ИГРА РУЛЕТКА (ИСПРАВЛЕНАЯ ЛОГИКА ДЛЯ КРАСНОГО И 17) ---
 
 def get_roulette_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -832,6 +832,9 @@ def get_roulette_kb():
         [InlineKeyboardButton(text="3-я дюжина", callback_data="rl_d3")],
         [InlineKeyboardButton(text="🟢 ЗЕРО", callback_data="rl_z")]
     ])
+
+# Классические красные номера в европейской рулетке
+RED_NUMBERS = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
 
 @dp.message(F.text.lower().startswith("рул"))
 async def game_roulette_start(message: Message):
@@ -852,7 +855,6 @@ async def game_roulette_start(message: Message):
         roulette_round_active = True
         roulette_bets.append({"user_id": message.from_user.id, "name": user["name"], "stake": stake, "choice": choice})
         
-        # Названия для вывода в чат
         choice_name = choice
         if choice in ["ч", "черный", "черное"]: choice_name = "на чёрный цвет"
         elif choice in ["к", "красный", "красное"]: choice_name = "на красный цвет"
@@ -906,7 +908,7 @@ async def execute_roulette(message_obj):
     roulette_round_active = False
     
     num = random.randint(0, 36)
-    color_emo = "🟢" if num == 0 else ("🔴" if num % 2 != 0 else "⚫️")
+    color_emo = "🟢" if num == 0 else ("🔴" if num in RED_NUMBERS else "⚫️")
     roulette_history.insert(0, f"{num}{color_emo}")
     if len(roulette_history) > 10: roulette_history.pop()
 
@@ -922,20 +924,18 @@ async def execute_roulette(message_obj):
         choice = str(b["choice"]).lower()
 
         mult = 0
-        # Диапазон арқылы тексеру (мысалы: "10-17")
         if "-" in choice:
             try:
                 parts_rng = choice.split("-")
                 r_min, r_max = int(parts_rng[0]), int(parts_rng[1])
                 if r_min <= num <= r_max:
-                    # Қаншалықты жақын диапазон болса (арақашықтығы аз болса), соншалықты коэффициент көбейеді
                     range_size = (r_max - r_min) + 1
                     mult = round(max(1.5, 36.0 / range_size), 2)
             except Exception:
                 pass
         else:
-            if choice in ["k", "красное", "красный"] and num % 2 != 0 and num != 0: mult = 1.9
-            elif choice in ["ch", "черное", "черный", "ч"] and num % 2 == 0 and num != 0: mult = 1.9
+            if choice in ["k", "красное", "красный"] and num in RED_NUMBERS: mult = 1.9
+            elif choice in ["ch", "черное", "черный", "ч"] and num not in RED_NUMBERS and num != 0: mult = 1.9
             elif choice in ["chet", "чет"] and num % 2 == 0 and num != 0: mult = 1.9
             elif choice in ["nechet", "нечет"] and num % 2 != 0: mult = 1.9
             elif choice == "1_18" and 1 <= num <= 18: mult = 1.9
@@ -1075,7 +1075,7 @@ async def game_slots(message: Message):
         
     await msg.edit_text(txt, parse_mode="Markdown")
 
-# --- МИНЫ (Отображение ячеек при завершении) ---
+# --- МИНЫ ---
 
 def get_mines_kb(user_id: int, revealed=None):
     g = active_mines[user_id]
@@ -1267,7 +1267,7 @@ async def process_help_callback(cb: CallbackQuery):
     if action == "games":
         text = (
             "🎮 **Игровой зал (Список игр):**\n\n"
-            "• `рз [ставка]` — Райз (поиск 1 алмаза)\n"
+            "• `рз [ставка]` — Райз (7 этажей)\n"
             "• `х50 [ставка] [ч/ф/к/з]` — Х50 (цвета)\n"
             "• `хило [ставка]` — HiLo #1 (карты)\n"
             "• `рул [ставка]` — Рулетка\n"
@@ -1332,7 +1332,7 @@ async def cmd_start(message: Message):
         "• `куровень` (Повысить лимит до 10 уровня)\n"
         "• `дать [сумма]` (Ответом)\n\n"
         "🎮 **ИГРЫ:**\n"
-        "• `рз [ставка]` (Райз)\n"
+        "• `рз [ставка]` (Райз - 7 этажей)\n"
         "• `х50 [ставка] [ч/ф/к/з]`\n"
         "• `хило [ставка]`\n"
         "• `рул [ставка]`\n"
@@ -1346,7 +1346,7 @@ async def cmd_start(message: Message):
 
 async def main():
     os.system('cls' if os.name == 'nt' else 'clear')
-    print("🚀 Gifgame_bot обновлен!")
+    print("🚀 Gifgame_bot с исправленной рулеткой и этажами Райз запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
