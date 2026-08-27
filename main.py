@@ -70,7 +70,6 @@ def check_and_reset_leaderboard():
         last_reset_dt = datetime.fromisoformat(lb_data["last_reset"])
         if datetime.now() - last_reset_dt >= timedelta(hours=24):
             rewards = [500000, 340000, 250000, 167000, 100000]
-            # Тек қана плюсте жүргендерді сұрыптаймыз (earn > 0)
             sorted_lb = sorted([item for item in lb_data["earnings"].items() if item[1] > 0], key=lambda x: x[1], reverse=True)[:5]
             
             for idx, (uid, _) in enumerate(sorted_lb):
@@ -88,7 +87,6 @@ def add_leaderboard_profit(user_id: int, profit: int):
     if user_id not in lb_data["earnings"]:
         lb_data["earnings"][user_id] = 0
     lb_data["earnings"][user_id] += profit
-    # Егер жалпы пайдасы 0-ден төмен түсіп кетсе, ЛБ үшін ең көбі 0 болып қалады немесе минус есептелмейді (тек плюстегілер көрсетіледі)
     save_data()
 
 x50_round_active = False
@@ -177,7 +175,6 @@ def main_keyboard():
 async def cmd_leaderboard(message: Message):
     check_and_reset_leaderboard()
     rewards = [500000, 340000, 250000, 167000, 100000]
-    # Тек қана плюсте жүргендерді (earnings > 0) шығарамыз
     positive_earnings = {uid: earn for uid, earn in lb_data["earnings"].items() if earn > 0}
     sorted_lb = sorted(positive_earnings.items(), key=lambda x: x[1], reverse=True)[:5]
     
@@ -278,8 +275,7 @@ async def cmd_admin_reset_all(message: Message):
     save_data()
     await message.reply("⚠️ **Глобальный сброс!** Балансы и банки абсолютно всех игроков обнулены (0).", parse_mode="Markdown")
 
-@dp.message(F.text.lower() == "[reset limit]")
-@dp.message(F.text.lower() == "reset limit")
+@dp.message(F.text.lower().in_({"[reset limit]", "reset limit"}))
 async def cmd_admin_reset_limit(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
@@ -310,8 +306,6 @@ async def cmd_transfer(message: Message):
     target_user["balance"] += amount
     save_data()
     await message.reply(f"🤝 Вы перевели **{amount:,}** игроку **{target_user['name']}**!", parse_mode="Markdown")
-
-# --- КУРОВЕНЬ (10 УРОВНЕЙ ЛИМИТА) ---
 
 LEVELS_CONFIG = {
     2: {"cost": 100000, "limit": 75000},
@@ -368,8 +362,6 @@ async def cmd_top(message: Message):
         res += f"{idx}. **{u['name']}** — {total:,}\n"
     await message.reply(res, parse_mode="Markdown")
 
-# --- ПРОМОКОДЫ ---
-
 @dp.message(F.text.lower().startswith("создатьпромо"))
 async def cmd_create_promo(message: Message):
     if message.from_user.id != ADMIN_ID: return
@@ -399,8 +391,6 @@ async def cmd_use_promo(message: Message):
     user["balance"] += pr["amount"]
     save_data()
     await message.reply(f"🎉 Промокод активирован! **+{pr['amount']:,}** зачислено на баланс!", parse_mode="Markdown")
-
-# --- ПРОФИЛЬ, БАНК, БОНУС ---
 
 @dp.message(F.text.lower().in_({"б", "баланс"}))
 async def cmd_short_balance(message: Message):
@@ -638,7 +628,7 @@ async def process_hilo_action(cb: CallbackQuery):
         )
         await cb.answer("Неверно!", show_alert=True)
 
-# --- ИГРА РАЙЗ (РЗ) - 5 КНОПОК С ИСТОРИЕЙ РЕЗУЛЬТАТОВ ---
+# --- ИГРА РАЙЗ (РЗ) - 5 КНОПОК ӘР САТЫДА ---
 
 RISE_STAGES = [
     {"step": 1, "bombs": 1, "gems": 4, "mult": 1.44},
@@ -654,7 +644,7 @@ def get_rise_kb(stage_idx: int, revealed=None):
     row = []
     for i in range(5):
         if revealed and i in revealed:
-            txt = revealed[i]  # 💎 немесе 💣
+            txt = revealed[i]
         else:
             txt = "❓"
         row.append(InlineKeyboardButton(text=txt, callback_data=f"rise_cell_{i}"))
@@ -678,7 +668,7 @@ async def game_rise_start(message: Message):
     save_data()
     
     st = RISE_STAGES[0]
-    total_cells = 5  # Әрқашан 5 ұяшық
+    total_cells = 5
     bomb_indices = set(random.sample(range(total_cells), st["bombs"]))
     
     active_rise[user_id] = {
@@ -686,7 +676,7 @@ async def game_rise_start(message: Message):
         "stage": 0,
         "bombs": bomb_indices,
         "total_cells": total_cells,
-        "history_lines": [], # Өткен сатылардың нәтижелерін сақтайтын массив
+        "history_lines": [], 
         "revealed": {}
     }
     
@@ -730,45 +720,37 @@ async def process_rise_action(cb: CallbackQuery):
             return await cb.answer("Эта ячейка уже открыта!", show_alert=True)
             
         if cell_idx in g["bombs"]:
-            # Бомба шықты! Барлық бомбалар мен алмаздарды көрсетеміз
             for i in range(g["total_cells"]):
                 if i in g["bombs"]:
                     g["revealed"][i] = "💣"
                 else:
                     g["revealed"][i] = "💎"
             
-            # Соңғы жолды құрастыру
-            line_str = "".join([g["revealed"][i] for i in range(5)])
+            line_str = " ".join([g["revealed"][i] for i in range(5)])
             g["history_lines"].append(line_str)
             
             stake_lost = g["stake"]
             add_leaderboard_profit(uid, -stake_lost)
-            
-            kb = get_rise_kb(stage_idx, g["revealed"])
-            kb = InlineKeyboardMarkup(inline_keyboard=[row for row in kb.inline_keyboard if not any(btn.callback_data == "rise_take" for btn in row)])
             
             full_history_text = "\n".join(g["history_lines"])
             del active_rise[uid]
             return await cb.message.edit_text(
                 f"💥 **Райз ({stage_idx + 1}-й этап):** Вы попали на бомбу 💣!\n\n"
                 f"{full_history_text}\n\n"
-                f"💔 Проигрыш: **-{stake_lost:,}**", reply_markup=kb, parse_mode="Markdown"
+                f"💔 Проигрыш: **-{stake_lost:,}**", parse_mode="Markdown"
             )
         else:
-            # Алмаз тапты! Осы ұяшықты ашық деп белгілейміз
             g["revealed"][cell_idx] = "💎"
-            
             gems_found = sum(1 for idx, symbol in g["revealed"].items() if symbol == "💎" and idx not in g["bombs"])
             
             if gems_found >= st["gems"]:
-                # Толық саты аяқталған кезде сол сатының барлық 5 ұяшығының мәнін толықтырып көрсету үшін ашамыз
                 for i in range(5):
                     if i in g["bombs"]:
                         g["revealed"][i] = "💣"
                     else:
                         g["revealed"][i] = "💎"
                 
-                line_str = "".join([g["revealed"][i] for i in range(5)])
+                line_str = " ".join([g["revealed"][i] for i in range(5)])
                 g["history_lines"].append(line_str)
                 
                 g["stage"] += 1
@@ -783,10 +765,8 @@ async def process_rise_action(cb: CallbackQuery):
                     del active_rise[uid]
                     return await cb.message.edit_text(f"🏆 **ГРАНДИОЗНАЯ ПОБЕДА!** Вы прошли все этапы!\n\n{full_history_text}\n\nВыигрыш: **+{win:,}** ({mult}x)", parse_mode="Markdown")
                 
-                # Келесі сатыға дайындық
                 next_st = RISE_STAGES[g["stage"]]
                 g["bombs"] = set(random.sample(range(5), next_st["bombs"]))
-                current_revealed_copy = g["revealed"].copy()
                 g["revealed"] = {}
                 
                 full_history_text = "\n".join(g["history_lines"])
