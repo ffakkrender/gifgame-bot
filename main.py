@@ -839,7 +839,7 @@ async def game_roulette_start(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
     if len(parts) < 2: 
-        return await message.reply("⚠️ Пример: `рул 100к`", parse_mode="Markdown")
+        return await message.reply("⚠️ Пример: `рул 100к ч` немесе `рул 100к 10-17`", parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
     if err: return await message.reply(err)
@@ -848,16 +848,17 @@ async def game_roulette_start(message: Message):
         choice = parts[2].lower()
         user["balance"] -= stake
         save_data()
-        roulette_bets.append({"user_id": message.from_user.id, "name": user["name"], "stake": stake, "choice": choice})
-        await message.reply(f"🎰 **{user['name']}** поставил **{stake:,}** на `{choice}` в рулетку!\nНапишите `го` для запуска раунда.")
         
-        if not roulette_round_active:
-            roulette_round_active = True
-            async def auto_run():
-                await asyncio.sleep(10)
-                if roulette_round_active:
-                    await execute_roulette(message)
-            asyncio.create_task(auto_run())
+        roulette_round_active = True
+        roulette_bets.append({"user_id": message.from_user.id, "name": user["name"], "stake": stake, "choice": choice})
+        
+        # Названия для вывода в чат
+        choice_name = choice
+        if choice in ["ч", "черный", "черное"]: choice_name = "на чёрный цвет"
+        elif choice in ["к", "красный", "красное"]: choice_name = "на красный цвет"
+        elif "-" in choice: choice_name = f"на {choice}"
+        
+        await message.reply(f"Игрок поставил {stake:,} gif {choice_name}\n(Ждем 'го' для запуска раунда)")
         return
 
     await message.reply(
@@ -879,23 +880,25 @@ async def process_roulette_choice(cb: CallbackQuery):
     user["balance"] -= stake
     save_data()
     
+    roulette_round_active = True
     roulette_bets.append({"user_id": uid, "name": user["name"], "stake": stake, "choice": choice_raw})
-    await cb.message.edit_text(f"🎰 **{user['name']}** поставил **{stake:,}** на `{choice_raw}`\nНапишите **го** для старта раунда!")
-
-    if not roulette_round_active:
-        roulette_round_active = True
-        async def auto_run():
-            await asyncio.sleep(10)
-            if roulette_round_active:
-                await execute_roulette(cb.message)
-        asyncio.create_task(auto_run())
+    
+    choice_name = choice_raw
+    if choice_raw == "ch": choice_name = "на чёрный цвет"
+    elif choice_raw == "k": choice_name = "на красный цвет"
+    elif choice_raw == "1_18": choice_name = "на 1-18"
+    elif choice_raw == "19_36": choice_name = "на 19-36"
+    
+    await cb.message.edit_text(f"Игрок поставил {stake:,} gif {choice_name}\nНапишите **го** для старта раунда!")
 
 @dp.message(F.text.lower() == "го")
 async def cmd_roulette_go(message: Message):
     global roulette_round_active
-    if not roulette_round_active or not roulette_bets:
+    if not roulette_bets:
         return
     roulette_round_active = False
+    await message.reply("подождите ещё 4 секунды...")
+    await asyncio.sleep(4)
     await execute_roulette(message)
 
 async def execute_roulette(message_obj):
@@ -907,7 +910,7 @@ async def execute_roulette(message_obj):
     roulette_history.insert(0, f"{num}{color_emo}")
     if len(roulette_history) > 10: roulette_history.pop()
 
-    res_msg = f"🎰 Выпавшее число: **{num} {color_emo}**\n\n"
+    res_msg = f"Рулетка: {color_emo} {num}\n"
     current_bets = roulette_bets.copy()
     roulette_bets.clear()
 
@@ -916,30 +919,43 @@ async def execute_roulette(message_obj):
         u_obj = db.get(uid)
         if not u_obj: continue
         stake = b["stake"]
-        choice = b["choice"]
+        choice = str(b["choice"]).lower()
 
         mult = 0
-        if choice in ["k", "красное"] and num % 2 != 0 and num != 0: mult = 1.9
-        elif choice in ["ch", "черное"] and num % 2 == 0 and num != 0: mult = 1.9
-        elif choice in ["chet", "чет"] and num % 2 == 0 and num != 0: mult = 1.9
-        elif choice in ["nechet", "нечет"] and num % 2 != 0: mult = 1.9
-        elif choice == "1_18" and 1 <= num <= 18: mult = 1.9
-        elif choice == "19_36" and 19 <= num <= 36: mult = 1.9
-        elif choice == "d1" and 1 <= num <= 12: mult = 3.0
-        elif choice == "d2" and 13 <= num <= 24: mult = 3.0
-        elif choice == "d3" and 25 <= num <= 36: mult = 3.0
-        elif choice in ["z", "зеро"] and num == 0: mult = 36.0
-
-        win = int(stake * mult)
-        if win > 0:
-            u_obj["balance"] += win
-            profit = win - stake
-            add_leaderboard_profit(uid, profit)
-            res_msg += f"{b['name']} {stake:,} — выигрыш {win:,} ✅\n"
+        # Диапазон арқылы тексеру (мысалы: "10-17")
+        if "-" in choice:
+            try:
+                parts_rng = choice.split("-")
+                r_min, r_max = int(parts_rng[0]), int(parts_rng[1])
+                if r_min <= num <= r_max:
+                    # Қаншалықты жақын диапазон болса (арақашықтығы аз болса), соншалықты коэффициент көбейеді
+                    range_size = (r_max - r_min) + 1
+                    mult = round(max(1.5, 36.0 / range_size), 2)
+            except Exception:
+                pass
         else:
-            profit = -stake
+            if choice in ["k", "красное", "красный"] and num % 2 != 0 and num != 0: mult = 1.9
+            elif choice in ["ch", "черное", "черный", "ч"] and num % 2 == 0 and num != 0: mult = 1.9
+            elif choice in ["chet", "чет"] and num % 2 == 0 and num != 0: mult = 1.9
+            elif choice in ["nechet", "нечет"] and num % 2 != 0: mult = 1.9
+            elif choice == "1_18" and 1 <= num <= 18: mult = 1.9
+            elif choice == "19_36" and 19 <= num <= 36: mult = 1.9
+            elif choice == "d1" and 1 <= num <= 12: mult = 3.0
+            elif choice == "d2" and 13 <= num <= 24: mult = 3.0
+            elif choice == "d3" and 25 <= num <= 36: mult = 3.0
+            elif choice in ["z", "зеро"] and num == 0: mult = 36.0
+
+        total_stake = stake
+        if mult > 0:
+            win = int(total_stake * mult)
+            u_obj["balance"] += win
+            profit = win - total_stake
             add_leaderboard_profit(uid, profit)
-            res_msg += f"{b['name']} {stake:,} — проигрыш ❌\n"
+            res_msg += f"Игрок {total_stake:,} — {win:,} gif ✅\n"
+        else:
+            profit = -total_stake
+            add_leaderboard_profit(uid, profit)
+            res_msg += f"Игрок {total_stake:,} — проигрыш ❌\n"
 
     save_data()
     await message_obj.bot.send_message(message_obj.chat.id, res_msg, parse_mode="Markdown")
