@@ -109,6 +109,7 @@ x50_history = []
 
 mw_round_active = False
 mw_bets = []
+mw_history = []
 
 roulette_round_active = False
 roulette_bets = []
@@ -566,6 +567,7 @@ MW_SECTORS = {
     "1": ("❄️", 1),
     "2": ("🔵", 2),
     "5": ("🟢", 5),
+    "8": ("🟡", 8),
     "10": ("🟠", 10),
     "15": ("🔴", 15),
     "20": ("🟣", 20),
@@ -578,12 +580,11 @@ async def start_mw_timer(chat_id):
         return
     
     mw_round_active = True
-    await asyncio.sleep(7)
+    await asyncio.sleep(15)
     
     total_bank = sum(b["stake"] for b in mw_bets)
     unique_players = len(set(b["user_id"] for b in mw_bets))
     
-    # 🎁 Тосынсый мультипликатор (35% мүмкіндік)
     surprise_mult = 1
     surprise_text = ""
     if random.random() < 0.35:
@@ -602,9 +603,8 @@ async def start_mw_timer(chat_id):
     prep_msg = await bot.send_message(chat_id, prep_text, parse_mode="Markdown")
     await asyncio.sleep(3)
     
-    sectors_list = [1, 2, 5, 10, 15, 20, 40]
-    # 1 мен 2 жиі шығатындай салмақтар
-    weights = [42, 28, 14, 8, 5, 2, 1]
+    sectors_list = [1, 2, 5, 8, 10, 15, 20, 40]
+    weights = [35, 25, 15, 10, 8, 5, 1, 1]  # 1 мен 2 жиі түседі, 40х сирек
     
     win_sector_num = random.choices(sectors_list, weights=weights)[0]
     win_sector_code = str(win_sector_num)
@@ -612,6 +612,9 @@ async def start_mw_timer(chat_id):
     
     final_mult = win_mult * surprise_mult
     
+    mw_history.insert(0, f"{win_emo} {win_sector_num}x")
+    if len(mw_history) > 10: mw_history.pop()
+
     result_text = f"🎡 **MegaWheel:** {win_emo} **{win_sector_num}x**"
     if surprise_mult > 1:
         result_text += f" *(🎁 Тосынсый x{surprise_mult} = 🔥 **{final_mult}x**)*"
@@ -625,6 +628,7 @@ async def start_mw_timer(chat_id):
         ("1", "❄️ 1x:"),
         ("2", "🔵 2x:"),
         ("5", "🟢 5x:"),
+        ("8", "🟡 8x:"),
         ("10", "🟠 10x:"),
         ("15", "🔴 15x:"),
         ("20", "🟣 20x:"),
@@ -668,6 +672,9 @@ async def start_mw_timer(chat_id):
 @dp.message(F.text.lower().startswith("мв") | F.text.lower().startswith("мегавил") | F.text.lower().startswith("mw"))
 async def game_megawheel(message: Message):
     global mw_bets
+    if mw_round_active:
+        return await message.reply("⏳ Ставка на этот раунд закрыта!", parse_mode="Markdown")
+
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
     if len(parts) < 3:
@@ -675,7 +682,7 @@ async def game_megawheel(message: Message):
     
     sector_arg = parts[2].lower()
     if sector_arg not in MW_SECTORS:
-        return await message.reply("⚠️ Ошибка! Выберите сектор: `1`, `2`, `5`, `10`, `15`, `20` немесе `40`", parse_mode="Markdown")
+        return await message.reply("⚠️ Ошибка! Выберите сектор: `1`, `2`, `5`, `8`, `10`, `15`, `20` немесе `40`", parse_mode="Markdown")
 
     stake, err = parse_stake(parts[1], user["balance"])
     if err:
@@ -687,13 +694,11 @@ async def game_megawheel(message: Message):
     sec_emo, sec_mult = MW_SECTORS[sector_arg]
     uid = message.from_user.id
 
-    if uid not in mw_last_bets or not mw_round_active:
-        mw_last_bets[uid] = []
+    if uid not in mw_last_bets:
+        mw_last_bets[uid] = {}
         
-    mw_last_bets[uid].append({
-        "stake": stake,
-        "sector": sector_arg
-    })
+    # Барлық ставкаларды сектор бойынша топтаймыз немесе жаңартамыз (дубль болмас үшін)
+    mw_last_bets[uid][sector_arg] = stake
 
     mw_bets.append({
         "user_id": uid,
@@ -704,18 +709,23 @@ async def game_megawheel(message: Message):
     
     await message.reply(f"🎡 **{user['name']}** поставил **{stake:,} гиф** на {sec_emo} **{sector_arg}x**", parse_mode="Markdown")
 
-    asyncio.create_task(start_mw_timer(message.chat.id))
+    if not mw_round_active:
+        asyncio.create_task(start_mw_timer(message.chat.id))
 
 @dp.callback_query(F.data == "mw_repeat_bet")
 async def cb_mw_repeat_bet(cb: CallbackQuery):
+    global mw_bets
+    if mw_round_active:
+        return await cb.answer("⏳ Ставка на этот раунд закрыта!", show_alert=True)
+
     uid = cb.from_user.id
     user = get_user(uid, cb.from_user.first_name)
     
     if uid not in mw_last_bets or not mw_last_bets[uid]:
         return await cb.answer("⚠️ У вас нет сохраненных ставок в Мегавил!", show_alert=True)
     
-    last_bets = mw_last_bets[uid]
-    total_needed = sum(b["stake"] for b in last_bets)
+    last_bets_dict = mw_last_bets[uid]
+    total_needed = sum(last_bets_dict.values())
     
     if user["balance"] < total_needed:
         return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {total_needed:,} гиф, у вас: {user['balance']:,}", show_alert=True)
@@ -724,11 +734,8 @@ async def cb_mw_repeat_bet(cb: CallbackQuery):
     save_data()
     
     repeat_summary = []
-    for b in last_bets:
-        stake = b["stake"]
-        sec = b["sector"]
+    for sec, stake in last_bets_dict.items():
         sec_emo, _ = MW_SECTORS[sec]
-        
         mw_bets.append({
             "user_id": uid,
             "name": user["name"],
@@ -745,7 +752,19 @@ async def cb_mw_repeat_bet(cb: CallbackQuery):
     )
     await cb.message.answer(quote_text, parse_mode="Markdown")
     
-    asyncio.create_task(start_mw_timer(cb.message.chat.id))
+    if not mw_round_active:
+        asyncio.create_task(start_mw_timer(cb.message.chat.id))
+
+@dp.message(F.text.lower() == "вилог")
+async def cmd_mw_log(message: Message):
+    if not mw_history: 
+        return await message.reply("📜 История выпадений MegaWheel пуста.")
+    
+    text = "📜 **История выпадений MegaWheel (Последние 10):**\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
+    for idx, item in enumerate(mw_history, 1):
+        text += f"🔹 Раунд #{idx} — {item}\n"
+    text += "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯"
+    await message.reply(text, parse_mode="Markdown")
 
 # --- ИГРА Х50 ---
 
@@ -762,7 +781,7 @@ async def start_x50_timer(chat_id):
         return
     
     x50_round_active = True
-    await asyncio.sleep(7)
+    await asyncio.sleep(15)
     
     roll = random.random()
     if roll < 0.50: mult_str, mult, code, emo = "x2", 2, "ч", "⚫️"
@@ -820,6 +839,9 @@ async def start_x50_timer(chat_id):
 @dp.message(F.text.lower().startswith("х50") | F.text.lower().startswith("x50"))
 async def game_x50(message: Message):
     global x50_bets
+    if x50_round_active:
+        return await message.reply("⏳ Ставка на этот раунд закрыта!", parse_mode="Markdown")
+
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
     if len(parts) < 3:
@@ -844,13 +866,10 @@ async def game_x50(message: Message):
                 "к" if choice_code in ["к", "красный", "красное", "r", "red"] else "з"
 
     uid = message.from_user.id
-    if uid not in x50_last_bets or not x50_round_active:
-        x50_last_bets[uid] = []
+    if uid not in x50_last_bets:
+        x50_last_bets[uid] = {}
 
-    x50_last_bets[uid].append({
-        "stake": stake,
-        "choice": norm_code
-    })
+    x50_last_bets[uid][norm_code] = stake
 
     x50_bets.append({
         "user_id": uid,
@@ -862,18 +881,23 @@ async def game_x50(message: Message):
     all_in_txt = " 🔥 *(ВА-БАНК!)*" if is_all_in else ""
     await message.reply(f"{color_emo} **{user['name']}** поставил **{stake:,} гиф** на {color_emo} {mult_str}{all_in_txt}", parse_mode="Markdown")
 
-    asyncio.create_task(start_x50_timer(message.chat.id))
+    if not x50_round_active:
+        asyncio.create_task(start_x50_timer(message.chat.id))
 
 @dp.callback_query(F.data == "x50_repeat_bet")
 async def cb_x50_repeat_bet(cb: CallbackQuery):
+    global x50_bets
+    if x50_round_active:
+        return await cb.answer("⏳ Ставка на этот раунд закрыта!", show_alert=True)
+
     uid = cb.from_user.id
     user = get_user(uid, cb.from_user.first_name)
     
     if uid not in x50_last_bets or not x50_last_bets[uid]:
         return await cb.answer("⚠️ У вас нет сохраненных ставок в Х50!", show_alert=True)
     
-    last_bets = x50_last_bets[uid]
-    total_needed = sum(b["stake"] for b in last_bets)
+    last_bets_dict = x50_last_bets[uid]
+    total_needed = sum(last_bets_dict.values())
     
     if user["balance"] < total_needed:
         return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {total_needed:,} гиф, баланс: {user['balance']:,}", show_alert=True)
@@ -882,11 +906,8 @@ async def cb_x50_repeat_bet(cb: CallbackQuery):
     save_data()
     
     repeat_summary = []
-    for b in last_bets:
-        stake = b["stake"]
-        norm_code = b["choice"]
+    for norm_code, stake in last_bets_dict.items():
         color_emo, mult_str, _ = X50_COLOR_MAP[norm_code]
-        
         x50_bets.append({
             "user_id": uid,
             "name": user["name"],
@@ -903,7 +924,8 @@ async def cb_x50_repeat_bet(cb: CallbackQuery):
     )
     await cb.message.answer(quote_text, parse_mode="Markdown")
     
-    asyncio.create_task(start_x50_timer(cb.message.chat.id))
+    if not x50_round_active:
+        asyncio.create_task(start_x50_timer(cb.message.chat.id))
 
 @dp.message(F.text.lower() == "дроп")
 async def cmd_drop(message: Message):
@@ -1818,7 +1840,7 @@ async def process_help_callback(cb: CallbackQuery):
     if action == "games":
         text = (
             "🎮 **Игровой зал (Список игр):**\n\n"
-            "• `мв [ставка] [1/2/5/10/15/20/40]` — Мегавил (MegaWheel)\n"
+            "• `мв [ставка] [1/2/5/8/10/15/20/40]` — Мегавил (MegaWheel)\n"
             "• `х50 [ставка] [ч/ф/к/з]` — Х50 (цвета)\n"
             "• `рз [ставка]` — Райз (7 этажей)\n"
             "• `хило [ставка]` — HiLo (карты)\n"
@@ -1871,7 +1893,7 @@ async def cmd_start(message: Message):
         "• `куровень` (Повысить лимит до 10 уровня)\n"
         "• `дать [сумма]` (Ответом)\n\n"
         "🎮 **ИГРЫ:**\n"
-        "• `мв [ставка] [1/2/5/10/15/20/40]` (MegaWheel)\n"
+        "• `мв [ставка] [1/2/5/8/10/15/20/40]` (MegaWheel)\n"
         "• `х50 [ставка] [ч/ф/к/з]`\n"
         "• `рз [ставка]` (Райз - 7 этажей)\n"
         "• `хило [ставка]`\n"
