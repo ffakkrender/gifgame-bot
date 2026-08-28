@@ -13,7 +13,7 @@ from aiogram.types import (
 
 RAW_TOKEN = "8990102475:AAFqraA1U4mfwodck74OIJl-VVEA3blWebk" 
 BOT_TOKEN = RAW_TOKEN.strip()
-ADMIN_ID = 816157991
+ADMIN_IDS = {816157991, 7842338512}
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -226,7 +226,7 @@ async def cb_refresh_lb(cb: CallbackQuery):
 
 @dp.message(F.text.lower().startswith("выдать"))
 async def cmd_admin_give(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     if not message.reply_to_message:
         return await message.reply("⚠️ **Ответьте (Reply) на сообщение игрока!**", parse_mode="Markdown")
@@ -253,7 +253,7 @@ async def cmd_admin_give(message: Message):
 
 @dp.message(F.text.lower() == "обнулировать")
 async def cmd_admin_zero(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     if not message.reply_to_message:
         return await message.reply("⚠️ **Ответьте (Reply) на сообщение игрока для обнуления!**", parse_mode="Markdown")
@@ -266,7 +266,7 @@ async def cmd_admin_zero(message: Message):
 
 @dp.message(F.text.lower() == "reset balance")
 async def cmd_admin_reset_all(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     for uid in db:
         db[uid]["balance"] = 0
@@ -276,7 +276,7 @@ async def cmd_admin_reset_all(message: Message):
 
 @dp.message(F.text.lower() == "reset kuroven")
 async def cmd_admin_reset_kuroven(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     if not message.reply_to_message:
         return await message.reply("⚠️ **Ответьте на сообщение игрока!**", parse_mode="Markdown")
@@ -289,7 +289,7 @@ async def cmd_admin_reset_kuroven(message: Message):
 
 @dp.message(F.text.lower() == "max kuroven")
 async def cmd_admin_max_kuroven(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     if not message.reply_to_message:
         return await message.reply("⚠️ **Ответьте на сообщение игрока!**", parse_mode="Markdown")
@@ -302,7 +302,7 @@ async def cmd_admin_max_kuroven(message: Message):
 
 @dp.message(F.text.lower().startswith("global nakid"))
 async def cmd_admin_global_nakid(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     parts = message.text.split()
     if len(parts) < 3:
@@ -311,14 +311,12 @@ async def cmd_admin_global_nakid(message: Message):
     if err:
         return await message.reply(err)
     
-    admin_id = message.from_user.id
     count = 0
     for uid in db:
-        if uid != admin_id:
-            db[uid]["balance"] += amount
-            count += 1
+        db[uid]["balance"] += amount
+        count += 1
     save_data()
-    await message.reply(f"🌍 Всем игрокам ({count} чел., исключая вас) зачислено по **{amount:,}** гиф!", parse_mode="Markdown")
+    await message.reply(f"🌍 Барлық ойыншыларға ({count} адам) балансына **{amount:,}** гиф қосылды!", parse_mode="Markdown")
 
 @dp.message(F.text.lower().startswith("дать"))
 async def cmd_transfer(message: Message):
@@ -398,7 +396,7 @@ async def cmd_top(message: Message):
 
 @dp.message(F.text.lower().startswith("создатьпромо"))
 async def cmd_create_promo(message: Message):
-    if message.from_user.id != ADMIN_ID: return
+    if message.from_user.id not in ADMIN_IDS: return
     parts = message.text.split()
     if len(parts) < 4: return await message.reply("⚠️ Пример: `создатьпромо КОД 100к 5`")
     code = parts[1].upper()
@@ -835,7 +833,7 @@ async def game_roulette_start(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
     if len(parts) < 2: 
-        return await message.reply("⚠️ Пример: `рул 50к к` или `рул 10к 17 5 6 9 10`", parse_mode="Markdown")
+        return await message.reply("⚠️ Пример: `рул 50к к` немесе `рул 50к 15-30` немесе `рул 50к д3`", parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
     if err: return await message.reply(err)
@@ -854,7 +852,7 @@ async def game_roulette_start(message: Message):
             else:
                 other_choices.append(clean_item)
                 
-        if numbers_chosen:
+        if numbers_chosen and len(raw_choices) > 1:
             total_numbers = len(numbers_chosen)
             if total_numbers > 36:
                 return await message.reply("⚠️ Нельзя выбрать больше 36 чисел за раз!")
@@ -878,8 +876,8 @@ async def game_roulette_start(message: Message):
             await message.reply(f"🎲 Игрок **{user['name']}** поставил **{total_stake:,} гиф** на цифры: `{nums_str}`\n(Напишите **го** для запуска рулетки)", parse_mode="Markdown")
             return
             
-        elif other_choices:
-            choice = other_choices[0]
+        elif other_choices or (len(raw_choices) == 1 and numbers_chosen):
+            choice = other_choices[0] if other_choices else str(numbers_chosen[0])
             user["balance"] -= stake
             save_data()
             
@@ -895,10 +893,11 @@ async def game_roulette_start(message: Message):
             choice_name = choice
             if choice in ["ч", "черный", "черное"]: choice_name = "на чёрный цвет"
             elif choice in ["к", "красный", "красное"]: choice_name = "на красный цвет"
-            elif choice in ["д1"]: choice_name = "на 1-ю дюжину (1-12)"
-            elif choice in ["д2"]: choice_name = "на 2-ю дюжину (13-24)"
-            elif choice in ["д3"]: choice_name = "на 3-ю дюжину (25-36)"
+            elif choice in ["d1", "1д"]: choice_name = "на 1-ю дюжину (1-12)"
+            elif choice in ["d2", "2д"]: choice_name = "на 2-ю дюжину (13-24)"
+            elif choice in ["d3", "3д"]: choice_name = "на 3-ю дюжину (25-36)"
             elif "-" in choice: choice_name = f"на диапазон {choice}"
+            elif choice.isdigit(): choice_name = f"на число {choice}"
             
             await message.reply(f"🎲 Игрок **{user['name']}** поставил **{stake:,} гиф** {choice_name}\n(Напишите **го** для запуска рулетки)", parse_mode="Markdown")
             return
@@ -990,7 +989,10 @@ async def execute_roulette(message_obj):
             total_stake = stake_per_item
             mult = 0
             
-            if "-" in choice:
+            if choice.isdigit():
+                if int(choice) == num:
+                    mult = 36.0
+            elif "-" in choice:
                 try:
                     parts_rng = choice.split("-")
                     r_min, r_max = int(parts_rng[0]), int(parts_rng[1])
@@ -1003,7 +1005,7 @@ async def execute_roulette(message_obj):
                 if choice in ["k", "красное", "красный"] and num in RED_NUMBERS: mult = 1.9
                 elif choice in ["ch", "черное", "черный", "ч"] and num not in RED_NUMBERS and num != 0: mult = 1.9
                 elif choice in ["chet", "чет"] and num % 2 == 0 and num != 0: mult = 1.9
-                elif choice in ["nechet", "нечет"] and num % 2 != 0: mult = 1.9
+                elif choice in ["nechet", "нечет"] and num % 2 != 0 and num != 0: mult = 1.9
                 elif choice == "1_18" and 1 <= num <= 18: mult = 1.9
                 elif choice == "19_36" and 19 <= num <= 36: mult = 1.9
                 elif choice in ["d1", "1д"] and 1 <= num <= 12: mult = 3.0
