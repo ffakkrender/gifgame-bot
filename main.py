@@ -157,7 +157,7 @@ def add_history(user_id: int, game_name: str, text: str):
     if len(user_history[user_id]) > 10:
         user_history[user_id].pop()
 
-# --- ТҮЗЕТІЛГЕН СТАВКА ПАРСИНГІ ---
+# --- СТАВКА ПАРСИНГІ ---
 
 def parse_amount_strict(text_arg: str):
     val = text_arg.lower().strip().replace(',', '.')
@@ -563,7 +563,9 @@ async def cmd_bank_wit(message: Message):
 # --- ИГРА MEGAWHEEL (МЕГАВИЛ) ---
 
 MW_SECTORS = {
-    "8": ("🟡", 8),
+    "1": ("❄️", 1),
+    "2": ("🔵", 2),
+    "5": ("🟢", 5),
     "10": ("🟠", 10),
     "15": ("🔴", 15),
     "20": ("🟣", 20),
@@ -576,45 +578,53 @@ async def start_mw_timer(chat_id):
         return
     
     mw_round_active = True
-    await asyncio.sleep(10)
+    await asyncio.sleep(7)
     
     total_bank = sum(b["stake"] for b in mw_bets)
     unique_players = len(set(b["user_id"] for b in mw_bets))
     
-    bonus_sector = random.choice([8, 10, 15, 20, 40])
-    bonus_emo = MW_SECTORS[str(bonus_sector)][0]
-    
+    # 🎁 Тосынсый мультипликатор (35% мүмкіндік)
+    surprise_mult = 1
+    surprise_text = ""
+    if random.random() < 0.35:
+        surprise_mult = random.choice([2, 3, 5])
+        surprise_text = f"🎁 **ТОСЫНСЫЙ МУЛЬТИПЛИКАТОР:** 🔥 **x{surprise_mult}**!\n\n"
+
     prep_text = (
         f"🎡 **MegaWheel**\n\n"
-        f"🎲 **Крутим колесо...**\n\n"
-        f"👥 Игроков: **{unique_players}**\n"
-        f"💰 Общий банк: **{total_bank:,} лир**\n\n"
-        f"⚡ **БОНУСНЫЙ СЕКТОР:** {bonus_emo} **{bonus_sector}x**\n"
-        f"⭐ Повышенный шанс!\n"
-        f"🎪 Определяем результат..."
+        f"🎲 **Дөңгелек айналуда... (3 сек)**\n\n"
+        f"👥 Ойыншылар: **{unique_players}**\n"
+        f"💰 Жалпы банк: **{total_bank:,} гиф**\n\n"
+        f"{surprise_text}"
+        f"🎪 Нәтиже анықталуда..."
     )
     
     prep_msg = await bot.send_message(chat_id, prep_text, parse_mode="Markdown")
     await asyncio.sleep(3)
     
-    sectors_list = [8, 10, 15, 20, 40]
-    weights = [45, 25, 15, 10, 5]
-    
-    bonus_idx = sectors_list.index(bonus_sector)
-    weights[bonus_idx] += 15
+    sectors_list = [1, 2, 5, 10, 15, 20, 40]
+    # 1 мен 2 жиі шығатындай салмақтар
+    weights = [42, 28, 14, 8, 5, 2, 1]
     
     win_sector_num = random.choices(sectors_list, weights=weights)[0]
     win_sector_code = str(win_sector_num)
     win_emo, win_mult = MW_SECTORS[win_sector_code]
     
-    result_text = f"🎡 **MegaWheel:** {win_emo} **{win_sector_num}x**\n\n"
+    final_mult = win_mult * surprise_mult
+    
+    result_text = f"🎡 **MegaWheel:** {win_emo} **{win_sector_num}x**"
+    if surprise_mult > 1:
+        result_text += f" *(🎁 Тосынсый x{surprise_mult} = 🔥 **{final_mult}x**)*"
+    result_text += "\n\n"
     
     current_bets = mw_bets.copy()
     mw_bets.clear()
     mw_round_active = False
 
     categories = [
-        ("8", "🟡 8x:"),
+        ("1", "❄️ 1x:"),
+        ("2", "🔵 2x:"),
+        ("5", "🟢 5x:"),
         ("10", "🟠 10x:"),
         ("15", "🔴 15x:"),
         ("20", "🟣 20x:"),
@@ -630,17 +640,17 @@ async def start_mw_timer(chat_id):
                 u_obj = db.get(u_id)
                 is_win = (b["sector"] == win_sector_code)
                 if is_win:
-                    win_amount = b["stake"] * win_mult
+                    win_amount = b["stake"] * final_mult
                     if u_obj:
                         u_obj["balance"] += win_amount
                     profit = win_amount - b["stake"]
                     add_leaderboard_profit(u_id, profit)
-                    result_text += f"💸 **{b['name']}** — ставка {b['stake']:,} → **+{win_amount:,} лир ({win_mult}x)** ✅\n"
+                    result_text += f"💸 **{b['name']}** — ставка {b['stake']:,} → **+{win_amount:,} гиф ({final_mult}x)** ✅\n"
                     add_history(u_id, "Мегавил", f"+{win_amount:,}")
                 else:
                     profit = -b["stake"]
                     add_leaderboard_profit(u_id, profit)
-                    result_text += f"❌ **{b['name']}** — ставка {b['stake']:,} → 0 лир\n"
+                    result_text += f"❌ **{b['name']}** — ставка {b['stake']:,} → 0 гиф\n"
                     add_history(u_id, "Мегавил", f"-{b['stake']:,}")
             result_text += "\n"
     
@@ -661,11 +671,11 @@ async def game_megawheel(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
     if len(parts) < 3:
-        return await message.reply("⚠️ Пример: `мв 2кк 20`", parse_mode="Markdown")
+        return await message.reply("⚠️ Пример: `мв 2кк 2` немесе `мв 50к 1`", parse_mode="Markdown")
     
     sector_arg = parts[2].lower()
     if sector_arg not in MW_SECTORS:
-        return await message.reply("⚠️ Ошибка! Выберите сектор: `8`, `10`, `15`, `20` или `40`", parse_mode="Markdown")
+        return await message.reply("⚠️ Ошибка! Выберите сектор: `1`, `2`, `5`, `10`, `15`, `20` немесе `40`", parse_mode="Markdown")
 
     stake, err = parse_stake(parts[1], user["balance"])
     if err:
@@ -692,7 +702,7 @@ async def game_megawheel(message: Message):
         "sector": sector_arg
     })
     
-    await message.reply(f"🎡 **{user['name']}** поставил **{stake:,} лир** на {sec_emo} **{sector_arg}x**", parse_mode="Markdown")
+    await message.reply(f"🎡 **{user['name']}** поставил **{stake:,} гиф** на {sec_emo} **{sector_arg}x**", parse_mode="Markdown")
 
     asyncio.create_task(start_mw_timer(message.chat.id))
 
@@ -725,12 +735,12 @@ async def cb_mw_repeat_bet(cb: CallbackQuery):
             "stake": stake,
             "sector": sec
         })
-        repeat_summary.append(f"> **{stake:,} лир** на {sec_emo} **{sec}x**")
+        repeat_summary.append(f"> **{stake:,} гиф** на {sec_emo} **{sec}x**")
     
     await cb.answer("🔁 Ставки повторены!")
     
     quote_text = (
-        f"🔁 **{user['name']}** повторил свои ставки в **MegaWheel** (всего {total_needed:,} лир):\n\n" +
+        f"🔁 **{user['name']}** повторил свои ставки в **MegaWheel** (всего {total_needed:,} гиф):\n\n" +
         "\n".join(repeat_summary)
     )
     await cb.message.answer(quote_text, parse_mode="Markdown")
@@ -1808,7 +1818,7 @@ async def process_help_callback(cb: CallbackQuery):
     if action == "games":
         text = (
             "🎮 **Игровой зал (Список игр):**\n\n"
-            "• `мв [ставка] [8/10/15/20/40]` — Мегавил (MegaWheel)\n"
+            "• `мв [ставка] [1/2/5/10/15/20/40]` — Мегавил (MegaWheel)\n"
             "• `х50 [ставка] [ч/ф/к/з]` — Х50 (цвета)\n"
             "• `рз [ставка]` — Райз (7 этажей)\n"
             "• `хило [ставка]` — HiLo (карты)\n"
@@ -1861,7 +1871,7 @@ async def cmd_start(message: Message):
         "• `куровень` (Повысить лимит до 10 уровня)\n"
         "• `дать [сумма]` (Ответом)\n\n"
         "🎮 **ИГРЫ:**\n"
-        "• `мв [ставка] [8/10/15/20/40]` (MegaWheel)\n"
+        "• `мв [ставка] [1/2/5/10/15/20/40]` (MegaWheel)\n"
         "• `х50 [ставка] [ч/ф/к/з]`\n"
         "• `рз [ставка]` (Райз - 7 этажей)\n"
         "• `хило [ставка]`\n"
