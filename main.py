@@ -26,6 +26,7 @@ LB_FILE = "lb_data.json"
 db = {}
 promos = {}
 user_history = {}
+pending_roulette_stakes = {}
 lb_data = {"last_reset": datetime.now().isoformat(), "earnings": {}}
 
 def load_data():
@@ -150,16 +151,15 @@ def add_history(user_id: int, game_name: str, text: str):
     if len(user_history[user_id]) > 10:
         user_history[user_id].pop()
 
-# --- КӨПТІЛДІ СОМАЛАРДЫ ПАРСИНГТЕУ (УНИВЕРСАЛ) ---
+# --- КӨПТІЛДІ СОМАЛАРДЫ ПАРСИНГТЕУ ---
 
 def parse_amount_strict(text_arg: str):
     val = text_arg.lower().strip().replace(',', '.')
     mult = 1
     
-    # Ағылшын және Кириллица әріптерін толық қолдау
-    if val.endswith(("ккк", "kkk", "б", "b", "млрд")):
+    if val.endswith(("ккк", "kkk", "млрд")):
         mult = 1_000_000_000
-        for suf in ["ккк", "kkk", "млрд", "б", "b"]:
+        for suf in ["ккк", "kkk", "млрд"]:
             if val.endswith(suf):
                 val = val[:-len(suf)]
                 break
@@ -578,6 +578,7 @@ async def game_x50(message: Message):
     if choice_code not in X50_COLOR_MAP:
         return await message.reply("⚠️ Ошибка! Выберите цвет: `ч`, `ф`, `к` или `з`", parse_mode="Markdown")
 
+    is_all_in = parts[1].lower() in ["все", "вабанк", "всё", "all", "всего"]
     user["balance"] -= stake
     save_data()
     
@@ -594,7 +595,8 @@ async def game_x50(message: Message):
         "choice": norm_code
     })
     
-    await message.reply(f"📥 **{user['name']}** сделал ставку: **{stake:,}** на {color_emo} {mult_str}!")
+    all_in_txt = " 🔥 *(ВА-БАНК!)*" if is_all_in else ""
+    await message.reply(f"📥 **{user['name']}** сделал ставку: **{stake:,}**{all_in_txt} на {color_emo} {mult_str}!")
 
     if not x50_round_active:
         x50_round_active = True
@@ -752,7 +754,7 @@ async def process_hilo_action(cb: CallbackQuery):
             parse_mode="Markdown"
         )
 
-# --- ИГРА РАЙЗ (РЗ) С 7 ЭТАЖАМИ ---
+# --- ИГРА РАЙЗ С 7 ЭТАЖАМИ ---
 
 RISE_STAGES = [
     {"step": 1, "bombs": 2, "gems": 3, "mult": 1.25},
@@ -905,11 +907,18 @@ async def process_rise_action(cb: CallbackQuery):
                 reply_markup=get_rise_kb(g["stage"]), parse_mode="Markdown"
             )
 
-# --- ИГРА РУЛЕТКА ---
+# --- ИГРА РУЛЕТКА (ЖАҢАРТЫЛҒАН КОЭФФИЦИЕНТТЕР ЖӘНЕ «ГО» ЛОГИКАСЫ) ---
 
 ROULETTE_HELP_TEXT = (
-    "🔴 Используйте: Рулетка {ставка} {тип ставки}. Доступные типы: число, диапазон, цвет, ODD, EVEN, LOW, HIGH, дюжина, колонка.\n\n"
-    "💡 Или просто: Рулетка {ставка} для выбора типа ставки кнопками"
+    "🎰 **РУЛЕТКА:**\n"
+    "• `рул [ставка] [выбор]`\n"
+    "• `рул [ставка]` (түймелермен таңдау)\n\n"
+    "💡 **Таңдау түрлері:**\n"
+    "- Жеке сан (мысалы `рул 50к 7` -> **34x**)\n"
+    "- Сандар диапазоны (мысалы `рул 50к 1-5` -> **8x**)\n"
+    "- Түстер (`ч`, `к` -> **1.9x**)\n"
+    "- Дюжиналар (`1д`, `2д`, `3д` -> **3.0x**)\n\n"
+    "⚠️ **Ойын басталу үшін:** Ставка қойған соң **«го»** деп жазыңыз!"
 )
 
 def get_roulette_kb():
@@ -924,9 +933,46 @@ def get_roulette_kb():
 
 RED_NUMBERS = {1, 3, 5, 7, 9, 12, 14, 16, 17, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
 
+def get_number_count_multiplier(count: int) -> float:
+    """Сандар санына қарай коэффициент есептеу (Дюпке қарсы!)"""
+    if count <= 0:
+        return 0.0
+    if count == 1:
+        return 34.0
+    elif count == 2:
+        return 17.0
+    elif count == 3:
+        return 13.0
+    elif count == 4:
+        return 10.0
+    elif count == 5:
+        return 8.0
+    elif count == 6:
+        return 6.5
+    elif count == 7:
+        return 5.5
+    elif count == 8:
+        return 4.8
+    elif count == 9:
+        return 4.2
+    elif count == 10:
+        return 3.8
+    elif count == 11:
+        return 3.4
+    elif count == 12:
+        return 3.0
+    elif count == 18:
+        return 1.9
+    elif count >= 37: # 0-36 барлығы 37 сан болады
+        return 0.75  # Ставкадан -0.25x (75% қайтады, 25% минус -> Дюп болмайды!)
+    else:
+        if count > 30:
+            return max(0.75, round(32.0 / count, 2))
+        return round(36.0 / count, 2)
+
 @dp.message(F.text.lower().startswith("рул") | F.text.lower().startswith("rul") | F.text.lower().startswith("рулетка"))
 async def game_roulette_start(message: Message):
-    global roulette_round_active, roulette_bets
+    global roulette_round_active, roulette_bets, pending_roulette_stakes
     user = get_user(message.from_user.id, message.from_user.first_name)
     
     parts = message.text.split()
@@ -938,71 +984,108 @@ async def game_roulette_start(message: Message):
         return await message.reply(err, parse_mode="Markdown")
     
     if len(parts) >= 3:
+        choice_arg = " ".join(parts[2:]).lower().strip()
+        
+        # 1. Сандар диапазоны (мысалы 0-36 немесе 1-5)
+        if "-" in choice_arg and choice_arg.replace("-", "").isdigit():
+            try:
+                rng_parts = choice_arg.split("-")
+                r_min, r_max = int(rng_parts[0]), int(rng_parts[1])
+                r_min, r_max = min(r_min, r_max), max(r_min, r_max)
+                if r_min < 0: r_min = 0
+                if r_max > 36: r_max = 36
+                
+                count = (r_max - r_min) + 1
+                mult = get_number_count_multiplier(count)
+                
+                user["balance"] -= stake
+                save_data()
+                
+                roulette_bets.append({
+                    "user_id": message.from_user.id,
+                    "name": user["name"],
+                    "stake": stake,
+                    "choices": [r_min, r_max],
+                    "type": "range",
+                    "count": count,
+                    "mult": mult
+                })
+                
+                mult_txt = f"{mult}x" if mult > 0 else "-0.25x"
+                await message.reply(
+                    f"🎲 **{user['name']}** поставил **{stake:,} гиф** на диапазон `{r_min}-{r_max}` ({count} чисел, K: {mult_txt})\n"
+                    f"💸 Баланс: **{user['balance']:,} гиф**\n\n"
+                    f"💬 Напишите **го** для запуска рулетки!", parse_mode="Markdown"
+                )
+                return
+            except Exception:
+                pass
+
+        # 2. Тек сандар тізімі
         raw_choices = parts[2:]
         numbers_chosen = []
-        other_choices = []
-        
         for item in raw_choices:
-            clean_item = item.strip().lower()
-            if clean_item.isdigit():
-                num_val = int(clean_item)
-                if 0 <= num_val <= 36:
-                    numbers_chosen.append(num_val)
-            else:
-                other_choices.append(clean_item)
+            if item.isdigit() and 0 <= int(item) <= 36:
+                numbers_chosen.append(int(item))
                 
-        if numbers_chosen and len(raw_choices) > 1:
-            total_numbers = len(numbers_chosen)
-            if total_numbers > 36:
-                return await message.reply("⚠️ Нельзя выбрать больше 36 чисел за раз!")
-            total_stake = stake * total_numbers
-            if total_stake > user["balance"]:
-                return await message.reply(f"⚠️ Недостаточно средств! Общая ставка на {total_numbers} чисел составит **{total_stake:,} гиф**.", parse_mode="Markdown")
-                
-            user["balance"] -= total_stake
-            save_data()
+        if numbers_chosen and len(numbers_chosen) == len(raw_choices):
+            count = len(numbers_chosen)
+            mult = get_number_count_multiplier(count)
             
-            roulette_round_active = True
-            roulette_bets.append({
-                "user_id": message.from_user.id,
-                "name": user["name"],
-                "stake_per_item": stake,
-                "choices": numbers_chosen,
-                "type": "numbers"
-            })
-            
-            nums_str = " ".join(map(str, numbers_chosen))
-            await message.reply(f"🎲 Игрок **{user['name']}** поставил **{total_stake:,} гиф** на цифры: `{nums_str}`\n(Напишите **го** для запуска рулетки)", parse_mode="Markdown")
-            return
-            
-        elif other_choices or (len(raw_choices) == 1 and numbers_chosen):
-            choice = other_choices[0] if other_choices else str(numbers_chosen[0])
             user["balance"] -= stake
             save_data()
             
-            roulette_round_active = True
             roulette_bets.append({
                 "user_id": message.from_user.id,
                 "name": user["name"],
-                "stake_per_item": stake,
-                "choices": choice,
-                "type": "single"
+                "stake": stake,
+                "choices": numbers_chosen,
+                "type": "numbers",
+                "count": count,
+                "mult": mult
             })
             
-            choice_name = choice
-            if choice in ["ч", "черный", "черное", "b", "black"]: choice_name = "на чёрный цвет"
-            elif choice in ["к", "красный", "красное", "r", "red"]: choice_name = "на красный цвет"
-            elif choice in ["d1", "1д"]: choice_name = "на 1-ю дюжину (1-12)"
-            elif choice in ["d2", "2д"]: choice_name = "на 2-ю дюжину (13-24)"
-            elif choice in ["d3", "3д"]: choice_name = "на 3-ю дюжину (25-36)"
-            elif "-" in choice: choice_name = f"на диапазон {choice}"
-            elif choice.isdigit(): choice_name = f"на число {choice}"
-            
-            await message.reply(f"🎲 Игрок **{user['name']}** поставил **{stake:,} гиф** {choice_name}\n(Напишите **го** для запуска рулетки)", parse_mode="Markdown")
+            nums_str = " ".join(map(str, numbers_chosen))
+            await message.reply(
+                f"🎲 **{user['name']}** поставил **{stake:,} гиф** на числа: `{nums_str}` (K: {mult}x)\n"
+                f"💸 Баланс: **{user['balance']:,} гиф**\n\n"
+                f"💬 Напишите **го** для запуска рулетки!", parse_mode="Markdown"
+            )
             return
 
+        # 3. Басқа таңдаулар (түс, дюжина т.б.)
+        choice = raw_choices[0].lower()
+        user["balance"] -= stake
+        save_data()
+        
+        roulette_bets.append({
+            "user_id": message.from_user.id,
+            "name": user["name"],
+            "stake": stake,
+            "choices": choice,
+            "type": "single"
+        })
+        
+        choice_name = choice
+        if choice in ["ч", "черный", "черное", "b", "black"]: choice_name = "на чёрный цвет (1.9x)"
+        elif choice in ["к", "красный", "красное", "r", "red"]: choice_name = "на красный цвет (1.9x)"
+        elif choice in ["d1", "1д"]: choice_name = "на 1-ю дюжину (3.0x)"
+        elif choice in ["d2", "2д"]: choice_name = "на 2-ю дюжину (3.0x)"
+        elif choice in ["d3", "3д"]: choice_name = "на 3-ю дюжину (3.0x)"
+        elif choice in ["chet", "чет"]: choice_name = "на четное (1.9x)"
+        elif choice in ["nechet", "нечет"]: choice_name = "на нечетное (1.9x)"
+        elif choice.isdigit(): choice_name = f"на число {choice} (34x)"
+        
+        await message.reply(
+            f"🎲 **{user['name']}** поставил **{stake:,} гиф** {choice_name}\n"
+            f"💸 Баланс: **{user['balance']:,} гиф**\n\n"
+            f"💬 Напишите **го** для запуска рулетки!", parse_mode="Markdown"
+        )
+        return
+
+    pending_roulette_stakes[message.from_user.id] = stake
     await message.reply(
-        f"🎰 **РУЛЕТКА**\n💰 Ставка: **{stake:,}**\n🎯 **Выберите исход или используйте текстовый ввод:**",
+        f"🎰 **РУЛЕТКА**\n💰 Ставка: **{stake:,}**\n🎯 **Выберите исход кнопкой или используйте текстовый ввод:**",
         reply_markup=get_roulette_kb(), parse_mode="Markdown"
     )
 
@@ -1013,18 +1096,17 @@ async def process_roulette_choice(cb: CallbackQuery):
     user = get_user(uid, cb.from_user.first_name)
     choice_raw = cb.data.replace("rl_", "")
     
-    stake = 50000 
+    stake = pending_roulette_stakes.pop(uid, 50000)
     if user["balance"] < stake:
         return await cb.message.edit_text(f"⚠️ Недостаточно средств на балансе! (Ваш баланс: **{user['balance']:,}**)", parse_mode="Markdown")
         
     user["balance"] -= stake
     save_data()
     
-    roulette_round_active = True
     roulette_bets.append({
         "user_id": uid,
         "name": user["name"],
-        "stake_per_item": stake,
+        "stake": stake,
         "choices": choice_raw,
         "type": "single"
     })
@@ -1038,14 +1120,14 @@ async def process_roulette_choice(cb: CallbackQuery):
     elif choice_raw == "d2": choice_name = "на 2-ю дюжину (13-24)"
     elif choice_raw == "d3": choice_name = "на 3-ю дюжину (25-36)"
     
-    await cb.message.edit_text(f"🎲 Игрок **{user['name']}** поставил **{stake:,} гиф** {choice_name}\nНапишите **го** для старта раунда!")
+    await cb.message.edit_text(f"🎲 Игрок **{user['name']}** поставил **{stake:,} гиф** {choice_name}\n💸 Баланс: **{user['balance']:,} гиф**\n\n💬 Напишите **го** для старта раунда!")
 
-@dp.message(F.text.lower() == "го")
+@dp.message(F.text.lower().in_({"го", "гоу", "go"}))
 async def cmd_roulette_go(message: Message):
-    global roulette_round_active
+    global roulette_round_active, roulette_bets
     if not roulette_bets:
-        return
-    roulette_round_active = False
+        return await message.reply("⚠️ **В рулетке нет активных ставок!**\nСначала сделайте ставку: `рул [ставка] [выбор]`", parse_mode="Markdown")
+    
     await execute_roulette(message)
 
 async def execute_roulette(message_obj):
@@ -1067,39 +1149,42 @@ async def execute_roulette(message_obj):
         if not u_obj: continue
         
         b_type = b.get("type", "single")
-        stake_per_item = b["stake_per_item"]
+        stake = b["stake"]
         
-        if b_type == "numbers":
-            chosen_nums = b["choices"]
-            total_stake = stake_per_item * len(chosen_nums)
-            if num in chosen_nums:
-                mult = 36.0 / len(chosen_nums)
-                win = int(total_stake * mult)
+        if b_type == "range":
+            r_min, r_max = b["choices"]
+            mult = b["mult"]
+            if r_min <= num <= r_max:
+                win = int(stake * mult)
                 u_obj["balance"] += win
-                profit = win - total_stake
+                profit = win - stake
                 add_leaderboard_profit(uid, profit)
-                res_msg += f"👤 {b['name']} ({total_stake:,} гиф) — выигрыш **+{win:,} гиф** ✅\n"
+                res_msg += f"👤 {b['name']} ({stake:,} гиф) — выигрыш **+{win:,} гиф** ✅\n"
             else:
-                profit = -total_stake
+                profit = -stake
                 add_leaderboard_profit(uid, profit)
-                res_msg += f"👤 {b['name']} ({total_stake:,} гиф) — проигрыш ❌\n"
+                res_msg += f"👤 {b['name']} ({stake:,} гиф) — проигрыш ❌\n"
+                
+        elif b_type == "numbers":
+            chosen_nums = b["choices"]
+            mult = b["mult"]
+            if num in chosen_nums:
+                win = int(stake * mult)
+                u_obj["balance"] += win
+                profit = win - stake
+                add_leaderboard_profit(uid, profit)
+                res_msg += f"👤 {b['name']} ({stake:,} гиф) — выигрыш **+{win:,} гиф** ✅\n"
+            else:
+                profit = -stake
+                add_leaderboard_profit(uid, profit)
+                res_msg += f"👤 {b['name']} ({stake:,} гиф) — проигрыш ❌\n"
         else:
             choice = str(b["choices"]).lower()
-            total_stake = stake_per_item
             mult = 0
             
             if choice.isdigit():
                 if int(choice) == num:
-                    mult = 36.0
-            elif "-" in choice:
-                try:
-                    parts_rng = choice.split("-")
-                    r_min, r_max = int(parts_rng[0]), int(parts_rng[1])
-                    if r_min <= num <= r_max:
-                        range_size = (r_max - r_min) + 1
-                        mult = round(max(1.5, 36.0 / range_size), 2)
-                except Exception:
-                    pass
+                    mult = 34.0
             else:
                 if choice in ["k", "красное", "красный", "r", "red"] and num in RED_NUMBERS: mult = 1.9
                 elif choice in ["ch", "черное", "черный", "ч", "b", "black"] and num not in RED_NUMBERS and num != 0: mult = 1.9
@@ -1110,18 +1195,18 @@ async def execute_roulette(message_obj):
                 elif choice in ["d1", "1д"] and 1 <= num <= 12: mult = 3.0
                 elif choice in ["d2", "2д"] and 13 <= num <= 24: mult = 3.0
                 elif choice in ["d3", "3д"] and 25 <= num <= 36: mult = 3.0
-                elif choice in ["z", "зеро"] and num == 0: mult = 36.0
+                elif choice in ["z", "зеро"] and num == 0: mult = 34.0
 
             if mult > 0:
-                win = int(total_stake * mult)
+                win = int(stake * mult)
                 u_obj["balance"] += win
-                profit = win - total_stake
+                profit = win - stake
                 add_leaderboard_profit(uid, profit)
-                res_msg += f"👤 {b['name']} ({total_stake:,} гиф) — выигрыш **+{win:,} гиф** ✅\n"
+                res_msg += f"👤 {b['name']} ({stake:,} гиф) — выигрыш **+{win:,} гиф** ✅\n"
             else:
-                profit = -total_stake
+                profit = -stake
                 add_leaderboard_profit(uid, profit)
-                res_msg += f"👤 {b['name']} ({total_stake:,} гиф) — проигрыш ❌\n"
+                res_msg += f"👤 {b['name']} ({stake:,} гиф) — проигрыш ❌\n"
 
     save_data()
     await message_obj.bot.send_message(message_obj.chat.id, res_msg, parse_mode="Markdown")
@@ -1421,6 +1506,7 @@ async def bj_stand(cb: CallbackQuery):
         add_leaderboard_profit(uid, profit)
         res += f"🎉 **ПОБЕДА! Выигрыш: +{win:,}**"
     elif p_score == d_score:
+        user["balance"] += g["stake"]
         res += "🤝 **Ничья! Ставка возвращена.**"
     else:
         profit = -g["stake"]
@@ -1463,7 +1549,7 @@ async def process_help_callback(cb: CallbackQuery):
             "• `рз [ставка]` — Райз (7 этажей)\n"
             "• `х50 [ставка] [ч/ф/к/з]` — Х50 (цвета)\n"
             "• `хило [ставка]` — HiLo (карты)\n"
-            "• `рул [ставка]` — Рулетка\n"
+            "• `рул [ставка]` — Рулетка (Старт: «го»)\n"
             "• `охота [ставка]` — Охота\n"
             "• `слоты [ставка]` — Слоты (джекпот)\n"
             "• `мины [ставка] [бомбы]` — Минное поле\n"
@@ -1515,7 +1601,7 @@ async def cmd_start(message: Message):
         "• `рз [ставка]` (Райз - 7 этажей)\n"
         "• `х50 [ставка] [ч/ф/к/з]`\n"
         "• `хило [ставка]`\n"
-        "• `рул [ставка]`\n"
+        "• `рул [ставка]` (Запуск: «го»)\n"
         "• `охота [ставка]`\n"
         "• `слоты [ставка]`\n"
         "• `мины [ставка] [бомбы]`\n"
