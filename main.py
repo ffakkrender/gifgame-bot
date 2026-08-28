@@ -30,7 +30,6 @@ lb_data = {"last_reset": datetime.now().isoformat(), "earnings": {}}
 
 def load_data():
     global db, promos, lb_data
-    # Қауіпсіз жүктеу (деректер өшіп қалмауы үшін backup арқылы)
     for file_path in [DB_FILE, DB_BAK]:
         if os.path.exists(file_path):
             try:
@@ -60,7 +59,6 @@ def load_data():
 
 def save_data():
     try:
-        # Атомарлық сақтау (Файл бұзылып, гифтер/баланс жоғалып кетпеуі үшін)
         tmp_db = f"{DB_FILE}.tmp"
         with open(tmp_db, "w", encoding="utf-8") as f:
             json.dump(db, f, ensure_ascii=False, indent=2)
@@ -137,7 +135,6 @@ def get_user(user_id: int, first_name: str):
         }
         save_data()
     else:
-        # Егер қолданушы өзі ник койса, Телеграм атымен қайта өзгермейді
         if not db[user_id].get("custom_nick", False):
             db[user_id]["name"] = clean_name
         if "transfer_limit_lvl" not in db[user_id]:
@@ -153,31 +150,52 @@ def add_history(user_id: int, game_name: str, text: str):
     if len(user_history[user_id]) > 10:
         user_history[user_id].pop()
 
+# --- КӨПТІЛДІ СОМАЛАРДЫ ПАРСИНГТЕУ (УНИВЕРСАЛ) ---
+
 def parse_amount_strict(text_arg: str):
-    val = text_arg.lower().strip()
+    val = text_arg.lower().strip().replace(',', '.')
     mult = 1
-    if val.endswith("кк"): mult = 1_000_000; val = val[:-2]
-    elif val.endswith("к"): mult = 1_000; val = val[:-1]
-    elif val.endswith("м"): mult = 1_000_000; val = val[:-1]
+    
+    # Ағылшын және Кириллица әріптерін толық қолдау
+    if val.endswith(("ккк", "kkk", "б", "b", "млрд")):
+        mult = 1_000_000_000
+        for suf in ["ккк", "kkk", "млрд", "б", "b"]:
+            if val.endswith(suf):
+                val = val[:-len(suf)]
+                break
+    elif val.endswith(("кк", "kk", "м", "m", "млн")):
+        mult = 1_000_000
+        for suf in ["кк", "kk", "млн", "м", "m"]:
+            if val.endswith(suf):
+                val = val[:-len(suf)]
+                break
+    elif val.endswith(("к", "k")):
+        mult = 1_000
+        for suf in ["к", "k"]:
+            if val.endswith(suf):
+                val = val[:-len(suf)]
+                break
     try:
-        return int(float(val) * mult), None
+        amount = int(float(val) * mult)
+        return amount, None
     except ValueError:
         return 0, "⚠️ Неверный формат суммы!"
 
 def parse_stake(text_arg: str, user_balance: int):
     val = text_arg.lower().strip()
-    if val in ["все", "вабанк", "всё"]:
+    if val in ["все", "вабанк", "всё", "all", "всего"]:
         stake = user_balance
     else:
         stake, err = parse_amount_strict(val)
-        if err: return 0, err
+        if err:
+            return 0, err
 
     if user_balance <= 0:
-        return 0, "ZERO_BALANCE"
+        return 0, "⚠️ У вас **0** гиф на балансе!"
     if stake <= 0:
         return 0, "⚠️ Ставка должна быть больше 0!"
     if stake > user_balance:
-        return 0, "⚠️ Недостаточно средств на балансе!"
+        return 0, f"⚠️ Недостаточно средств! Ваш баланс: **{user_balance:,}** гиф"
         
     return stake, None
 
@@ -191,9 +209,9 @@ def main_keyboard():
         resize_keyboard=True
     )
 
-# --- НИКНЕЙМ АУЫСТЫРУ (NICKNAME CHANGE) ---
+# --- НИКНЕЙМ АУЫСТЫРУ ---
 
-@dp.message(F.text.lower().startswith("ник ") | F.text.lower().startswith("сетник "))
+@dp.message(F.text.lower().startswith("ник ") | F.text.lower().startswith("сетник ") | F.text.lower().startswith("nick "))
 async def cmd_set_nickname(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split(maxsplit=1)
@@ -208,7 +226,7 @@ async def cmd_set_nickname(message: Message):
 
 # --- ТАБЛИЦА ЛИДЕРОВ (ЛБ) ---
 
-@dp.message(F.text.in_({"📊 ЛБ", "лб", "lb"}))
+@dp.message(F.text.lower().in_({"📊 лб", "лб", "lb"}))
 async def cmd_leaderboard(message: Message):
     check_and_reset_leaderboard()
     rewards = [500000, 340000, 250000, 167000, 100000]
@@ -276,11 +294,11 @@ async def cmd_admin_give(message: Message):
         return await message.reply("⚠️ Пример: `выдать 1000кк`", parse_mode="Markdown")
     
     val = parts[1].lower()
-    if val in ["все", "всё"]:
+    if val in ["все", "всё", "all"]:
         amount = 100_000_000_000_000
     else:
         amount, err = parse_amount_strict(val)
-        if err: return await message.reply(err)
+        if err: return await message.reply(err, parse_mode="Markdown")
         
     if amount < 100:
         return await message.reply("⚠️ Минимальная сумма для выдачи: **100**", parse_mode="Markdown")
@@ -348,7 +366,7 @@ async def cmd_admin_global_nakid(message: Message):
     
     amount, err = parse_amount_strict(parts[2])
     if err:
-        return await message.reply(err)
+        return await message.reply(err, parse_mode="Markdown")
     
     if not db:
         return await message.reply("⚠️ База данных игроков пуста!", parse_mode="Markdown")
@@ -360,17 +378,16 @@ async def cmd_admin_global_nakid(message: Message):
     save_data()
     await message.reply(f"🌍 Барлық ойыншыларға ({count} адам) балансына **{amount:,}** гиф қосылды!", parse_mode="Markdown")
 
-@dp.message(F.text.lower().startswith("дать"))
+@dp.message(F.text.lower().startswith("дать") | F.text.lower().startswith("give"))
 async def cmd_transfer(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
     if len(parts) < 2 or not message.reply_to_message:
         return await message.reply("⚠️ Ответьте на сообщение игрока: `дать 50к`", parse_mode="Markdown")
+    
     stake, err = parse_stake(parts[1], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply("⚠️ У вас недостаточно средств на балансе!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
     
     if user["transfer_limit_lvl"] < 10 and stake > user["transfer_limit"]:
         return await message.reply(f"⚠️ Ваш лимит перевода: **{user['transfer_limit']:,} гиф**!\nЧтобы повысить лимит: `куровень`", parse_mode="Markdown")
@@ -429,7 +446,7 @@ async def cmd_up_transfer_limit(message: Message):
     new_limit_str = "Бесконечно (∞) ♾️" if next_lvl == 10 else f"{user['transfer_limit']:,} гиф"
     await message.reply(f"🚀 Успешно! Уровень повышен: **Lvl {next_lvl}**\n💸 Новый лимит перевода: **{new_limit_str}**", parse_mode="Markdown")
 
-@dp.message(F.text.in_({"🏆 Топ", "топ"}))
+@dp.message(F.text.lower().in_({"🏆 топ", "топ", "top"}))
 async def cmd_top(message: Message):
     if not db: return await message.reply("🏆 Список игроков пуст.")
     sorted_users = sorted(db.values(), key=lambda x: x["balance"] + x["bank"], reverse=True)[:10]
@@ -446,7 +463,7 @@ async def cmd_create_promo(message: Message):
     if len(parts) < 4: return await message.reply("⚠️ Пример: `создатьпромо КОД 100к 5` ")
     code = parts[1].upper()
     val, err = parse_amount_strict(parts[2])
-    if err: return await message.reply(err)
+    if err: return await message.reply(err, parse_mode="Markdown")
     uses = int(parts[3])
     promos[code] = {"amount": val, "uses": uses, "users": []}
     save_data()
@@ -469,17 +486,17 @@ async def cmd_use_promo(message: Message):
     save_data()
     await message.reply(f"🎉 Промокод активирован! **+{pr['amount']:,}** зачислено на баланс!", parse_mode="Markdown")
 
-@dp.message(F.text.lower().in_({"б", "баланс"}))
+@dp.message(F.text.lower().in_({"б", "b", "баланс", "balance"}))
 async def cmd_short_balance(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     await message.reply(f"💸 Баланс: **{user['balance']:,}**", parse_mode="Markdown")
 
-@dp.message(F.text.lower() == "банк")
+@dp.message(F.text.lower().in_({"банк", "bank"}))
 async def cmd_short_bank(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     await message.reply(f"🏦 Банк: **{user['bank']:,}**", parse_mode="Markdown")
 
-@dp.message(F.text.in_({"👤 Профиль", "профиль"}))
+@dp.message(F.text.lower().in_({"👤 профиль", "профиль", "profile"}))
 async def cmd_profile(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     limit_str = "Бесконечно (∞) ♾️" if user["transfer_limit_lvl"] == 10 else f"{user['transfer_limit']:,} гиф"
@@ -491,7 +508,7 @@ async def cmd_profile(message: Message):
         f"🤝 Лимит перевода: **{limit_str}**", parse_mode="Markdown"
     )
 
-@dp.message(F.text.in_({"🎁 Бонус", "бонус"}))
+@dp.message(F.text.lower().in_({"🎁 бонус", "бонус", "bonus"}))
 async def cmd_bonus(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     now = datetime.now()
@@ -506,31 +523,31 @@ async def cmd_bonus(message: Message):
     save_data()
     await message.reply(f"🎁 Бонус успешно получен: **+{bonus_val:,}**!", parse_mode="Markdown")
 
-@dp.message(F.text.lower().startswith("банк положить"))
+@dp.message(F.text.lower().startswith("банк положить") | F.text.lower().startswith("bank deposit"))
 async def cmd_bank_dep(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
     if len(parts) < 3: return await message.reply("⚠️ Пример: `банк положить 50к` ")
+    
     stake, err = parse_stake(parts[2], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply("⚠️ У вас недостаточно средств на балансе!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
+        
     user["balance"] -= stake
     user["bank"] += stake
     save_data()
     await message.reply(f"🏦 В банк положено: **+{stake:,}**", parse_mode="Markdown")
 
-@dp.message(F.text.lower().startswith("банк снять"))
+@dp.message(F.text.lower().startswith("банк снять") | F.text.lower().startswith("bank withdraw"))
 async def cmd_bank_wit(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
     if len(parts) < 3: return await message.reply("⚠️ Пример: `банк снять 50к` ")
+    
     stake, err = parse_stake(parts[2], user["bank"])
-    if err == "ZERO_BALANCE" or user["bank"] <= 0:
-        return await message.reply("⚠️ В банке недостаточно средств!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
+        
     user["bank"] -= stake
     user["balance"] += stake
     save_data()
@@ -539,17 +556,13 @@ async def cmd_bank_wit(message: Message):
 # --- ИГРА Х50 ---
 
 X50_COLOR_MAP = {
-    "ч": ("⚫️", "x2", 2),
-    "черный": ("⚫️", "x2", 2),
-    "ф": ("🟣", "x3", 3),
-    "фиолетовый": ("🟣", "x3", 3),
-    "к": ("🔴", "x5", 5),
-    "красный": ("🔴", "x5", 5),
-    "з": ("🟢", "x50", 50),
-    "зеленый": ("🟢", "x50", 50)
+    "ч": ("⚫️", "x2", 2), "черный": ("⚫️", "x2", 2), "черное": ("⚫️", "x2", 2), "b": ("⚫️", "x2", 2), "black": ("⚫️", "x2", 2),
+    "ф": ("🟣", "x3", 3), "фиолетовый": ("🟣", "x3", 3), "фиолетовое": ("🟣", "x3", 3), "p": ("🟣", "x3", 3), "purple": ("🟣", "x3", 3),
+    "к": ("🔴", "x5", 5), "красный": ("🔴", "x5", 5), "красное": ("🔴", "x5", 5), "r": ("🔴", "x5", 5), "red": ("🔴", "x5", 5),
+    "з": ("🟢", "x50", 50), "зеленый": ("🟢", "x50", 50), "зеленое": ("🟢", "x50", 50), "g": ("🟢", "x50", 50), "green": ("🟢", "x50", 50)
 }
 
-@dp.message(F.text.lower().startswith("х50"))
+@dp.message(F.text.lower().startswith("х50") | F.text.lower().startswith("x50"))
 async def game_x50(message: Message):
     global x50_round_active, x50_bets
     user = get_user(message.from_user.id, message.from_user.first_name)
@@ -558,23 +571,21 @@ async def game_x50(message: Message):
         return await message.reply("⚠️ Пример: `х50 50к ч`", parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply("⚠️ У вас недостаточно средств на балансе!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
     
     choice_code = parts[2].lower()
     if choice_code not in X50_COLOR_MAP:
-        return await message.reply("⚠️ Ошибка! Выберите цвет: `ч`, `ф`, `к` или `з`")
+        return await message.reply("⚠️ Ошибка! Выберите цвет: `ч`, `ф`, `к` или `з`", parse_mode="Markdown")
 
     user["balance"] -= stake
     save_data()
     
     color_emo, mult_str, mult_num = X50_COLOR_MAP[choice_code]
     
-    norm_code = "ч" if choice_code in ["ч", "черный"] else \
-                "ф" if choice_code in ["ф", "фиолетовый"] else \
-                "к" if choice_code in ["к", "красный"] else "з"
+    norm_code = "ч" if choice_code in ["ч", "черный", "черное", "b", "black"] else \
+                "ф" if choice_code in ["ф", "фиолетовый", "фиолетовое", "p", "purple"] else \
+                "к" if choice_code in ["к", "красный", "красное", "r", "red"] else "з"
 
     x50_bets.append({
         "user_id": message.from_user.id,
@@ -664,10 +675,8 @@ async def game_hilo_start(message: Message):
     if len(parts) < 2: return await message.reply("⚠️ Пример: `хило 50к`", parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply("⚠️ У вас недостаточно средств на балансе!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
     
     user["balance"] -= stake
     save_data()
@@ -768,7 +777,7 @@ def get_rise_kb(stage_idx: int, revealed=None):
         kb.append([InlineKeyboardButton(text="💰 Забрать выигрыш", callback_data="rise_take")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
-@dp.message(F.text.lower().startswith("райз") | F.text.lower().startswith("рз"))
+@dp.message(F.text.lower().startswith("райз") | F.text.lower().startswith("рз") | F.text.lower().startswith("rise") | F.text.lower().startswith("rz"))
 async def game_rise_start(message: Message):
     user_id = message.from_user.id
     user = get_user(user_id, message.from_user.first_name)
@@ -776,10 +785,8 @@ async def game_rise_start(message: Message):
     if len(parts) < 2: return await message.reply("⚠️ Пример: `рз 50к`", parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply("⚠️ У вас недостаточно средств на балансе!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
     
     user["balance"] -= stake
     save_data()
@@ -917,23 +924,18 @@ def get_roulette_kb():
 
 RED_NUMBERS = {1, 3, 5, 7, 9, 12, 14, 16, 17, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
 
-@dp.message(F.text.lower().startswith("рул"))
+@dp.message(F.text.lower().startswith("рул") | F.text.lower().startswith("rul") | F.text.lower().startswith("рулетка"))
 async def game_roulette_start(message: Message):
     global roulette_round_active, roulette_bets
     user = get_user(message.from_user.id, message.from_user.first_name)
     
-    if user["balance"] <= 0:
-        return await message.reply(ROULETTE_HELP_TEXT, parse_mode="Markdown")
-        
     parts = message.text.split()
     if len(parts) < 2: 
         return await message.reply(ROULETTE_HELP_TEXT, parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply(ROULETTE_HELP_TEXT, parse_mode="Markdown")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
     
     if len(parts) >= 3:
         raw_choices = parts[2:]
@@ -988,8 +990,8 @@ async def game_roulette_start(message: Message):
             })
             
             choice_name = choice
-            if choice in ["ч", "черный", "черное"]: choice_name = "на чёрный цвет"
-            elif choice in ["к", "красный", "красное"]: choice_name = "на красный цвет"
+            if choice in ["ч", "черный", "черное", "b", "black"]: choice_name = "на чёрный цвет"
+            elif choice in ["к", "красный", "красное", "r", "red"]: choice_name = "на красный цвет"
             elif choice in ["d1", "1д"]: choice_name = "на 1-ю дюжину (1-12)"
             elif choice in ["d2", "2д"]: choice_name = "на 2-ю дюжину (13-24)"
             elif choice in ["d3", "3д"]: choice_name = "на 3-ю дюжину (25-36)"
@@ -1013,7 +1015,7 @@ async def process_roulette_choice(cb: CallbackQuery):
     
     stake = 50000 
     if user["balance"] < stake:
-        return await cb.message.edit_text("⚠️ Недостаточно средств на балансе!", parse_mode="Markdown")
+        return await cb.message.edit_text(f"⚠️ Недостаточно средств на балансе! (Ваш баланс: **{user['balance']:,}**)", parse_mode="Markdown")
         
     user["balance"] -= stake
     save_data()
@@ -1099,8 +1101,8 @@ async def execute_roulette(message_obj):
                 except Exception:
                     pass
             else:
-                if choice in ["k", "красное", "красный"] and num in RED_NUMBERS: mult = 1.9
-                elif choice in ["ch", "черное", "черный", "ч"] and num not in RED_NUMBERS and num != 0: mult = 1.9
+                if choice in ["k", "красное", "красный", "r", "red"] and num in RED_NUMBERS: mult = 1.9
+                elif choice in ["ch", "черное", "черный", "ч", "b", "black"] and num not in RED_NUMBERS and num != 0: mult = 1.9
                 elif choice in ["chet", "чет", "odd"] and num % 2 == 0 and num != 0: mult = 1.9
                 elif choice in ["nechet", "нечет", "even"] and num % 2 != 0 and num != 0: mult = 1.9
                 elif choice in ["1_18", "low"] and 1 <= num <= 18: mult = 1.9
@@ -1131,18 +1133,17 @@ async def cmd_roulette_log(message: Message):
 
 # --- ДРУГИЕ ИГРЫ ---
 
-@dp.message(F.text.lower().startswith("баскетбол"))
+@dp.message(F.text.lower().startswith("баскетбол") | F.text.lower().startswith("баск") | F.text.lower().startswith("bask"))
 async def game_basket(message: Message):
     uid = message.from_user.id
     user = get_user(uid, message.from_user.first_name)
     parts = message.text.split()
     if len(parts) < 3: 
         return await message.reply("⚠️ Пример: `баскетбол 50к попадание`", parse_mode="Markdown")
+    
     stake, err = parse_stake(parts[1], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply("⚠️ У вас недостаточно средств на балансе!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
     
     choice = parts[2].lower()
     user["balance"] -= stake
@@ -1167,7 +1168,7 @@ async def game_basket(message: Message):
         save_data()
         await message.reply(f"🏀 **Мимо кольца!** Проигрыш: **-{stake:,}**", parse_mode="Markdown")
 
-@dp.message(F.text.lower().startswith("охота"))
+@dp.message(F.text.lower().startswith("охота") | F.text.lower().startswith("hunt"))
 async def game_hunt(message: Message):
     uid = message.from_user.id
     user = get_user(uid, message.from_user.first_name)
@@ -1175,10 +1176,8 @@ async def game_hunt(message: Message):
     if len(parts) < 2: return await message.reply("⚠️ Пример: `охота 50к`", parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply("⚠️ У вас недостаточно средств на балансе!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
     
     user["balance"] -= stake
     save_data()
@@ -1206,7 +1205,7 @@ async def game_hunt(message: Message):
         save_data()
         await msg.edit_text(f"🎯 **Неудача!** Ставка сгорела: **-{stake:,}** 💔", parse_mode="Markdown")
 
-@dp.message(F.text.lower().startswith("слоты"))
+@dp.message(F.text.lower().startswith("слоты") | F.text.lower().startswith("slots"))
 async def game_slots(message: Message):
     uid = message.from_user.id
     user = get_user(uid, message.from_user.first_name)
@@ -1214,10 +1213,8 @@ async def game_slots(message: Message):
     if len(parts) < 2: return await message.reply("⚠️ Пример: `слоты 50к`", parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply("⚠️ У вас недостаточно средств на балансе!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
     
     user["balance"] -= stake
     save_data()
@@ -1270,7 +1267,7 @@ def get_mines_kb(user_id: int, revealed=None):
     kb.append([InlineKeyboardButton(text=f"💰 Забрать ({win:,})", callback_data="m_take")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
-@dp.message(F.text.lower().startswith("мины"))
+@dp.message(F.text.lower().startswith("мины") | F.text.lower().startswith("mines"))
 async def game_mines_start(message: Message):
     user_id = message.from_user.id
     user = get_user(user_id, message.from_user.first_name)
@@ -1278,10 +1275,8 @@ async def game_mines_start(message: Message):
     if len(parts) < 2: return await message.reply("⚠️ Пример: `мины 50к 3`", parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply("⚠️ У вас недостаточно средств на балансе!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
     
     bombs_cnt = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() and 1 <= int(parts[2]) <= 24 else 3
     user["balance"] -= stake
@@ -1364,7 +1359,7 @@ def calc_score(hand):
         aces -= 1
     return val
 
-@dp.message(F.text.lower().startswith("блэкджек") | F.text.lower().startswith("бж"))
+@dp.message(F.text.lower().startswith("блэкджек") | F.text.lower().startswith("бж") | F.text.lower().startswith("bj") | F.text.lower().startswith("blackjack"))
 async def game_bj_start(message: Message):
     user_id = message.from_user.id
     user = get_user(user_id, message.from_user.first_name)
@@ -1372,10 +1367,8 @@ async def game_bj_start(message: Message):
     if len(parts) < 2: return await message.reply("⚠️ Пример: `бж 50к`", parse_mode="Markdown")
     
     stake, err = parse_stake(parts[1], user["balance"])
-    if err == "ZERO_BALANCE" or user["balance"] <= 0:
-        return await message.reply("⚠️ У вас недостаточно средств на балансе!")
-    elif err:
-        return await message.reply(err)
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
     
     user["balance"] -= stake
     save_data()
@@ -1439,7 +1432,7 @@ async def bj_stand(cb: CallbackQuery):
 
 # --- ПОМОЩЬ И СТАРТ ---
 
-@dp.message(F.text.in_({"🆘 Помощь", "помощь"}))
+@dp.message(F.text.lower().in_({"🆘 помощь", "помощь", "help"}))
 async def cmd_help(message: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Игровой зал", callback_data="help_games")],
