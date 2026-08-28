@@ -137,19 +137,24 @@ def add_history(user_id: int, game_name: str, text: str):
     if len(user_history[user_id]) > 10:
         user_history[user_id].pop()
 
-def parse_stake(text_arg: str, user_balance: int = 999_999_999_999_999_999):
+def parse_amount_strict(text_arg: str):
+    val = text_arg.lower().strip()
+    mult = 1
+    if val.endswith("кк"): mult = 1_000_000; val = val[:-2]
+    elif val.endswith("к"): mult = 1_000; val = val[:-1]
+    elif val.endswith("м"): mult = 1_000_000; val = val[:-1]
+    try:
+        return int(float(val) * mult), None
+    except ValueError:
+        return 0, "⚠️ Неверный формат суммы!"
+
+def parse_stake(text_arg: str, user_balance: int):
     val = text_arg.lower().strip()
     if val in ["все", "вабанк", "всё"]:
         stake = user_balance
     else:
-        mult = 1
-        if val.endswith("кк"): mult = 1_000_000; val = val[:-2]
-        elif val.endswith("к"): mult = 1_000; val = val[:-1]
-        elif val.endswith("м"): mult = 1_000_000; val = val[:-1]
-        try:
-            stake = int(float(val) * mult)
-        except ValueError:
-            return 0, "⚠️ Неверный формат суммы!"
+        stake, err = parse_amount_strict(val)
+        if err: return 0, err
 
     if stake <= 0:
         return 0, "⚠️ Ставка должна быть больше 0!"
@@ -237,11 +242,11 @@ async def cmd_admin_give(message: Message):
     if len(parts) < 2:
         return await message.reply("⚠️ Пример: `выдать 1000кк`", parse_mode="Markdown")
     
-    val_str = parts[1].lower()
-    if val_str in ["все", "всё"]:
+    val = parts[1].lower()
+    if val in ["все", "всё"]:
         amount = 100_000_000_000_000
     else:
-        amount, err = parse_stake(parts[1])
+        amount, err = parse_amount_strict(val)
         if err: return await message.reply(err)
         
     if amount < 100:
@@ -308,10 +313,13 @@ async def cmd_admin_global_nakid(message: Message):
     if len(parts) < 3:
         return await message.reply("⚠️ Пример: `global nakid 100к`", parse_mode="Markdown")
     
-    amount, err = parse_stake(parts[2])
+    amount, err = parse_amount_strict(parts[2])
     if err:
         return await message.reply(err)
     
+    if not db:
+        return await message.reply("⚠️ База данных игроков пуста!", parse_mode="Markdown")
+
     count = 0
     for uid in db:
         db[uid]["balance"] += amount
@@ -401,7 +409,7 @@ async def cmd_create_promo(message: Message):
     parts = message.text.split()
     if len(parts) < 4: return await message.reply("⚠️ Пример: `создатьпромо КОД 100к 5`")
     code = parts[1].upper()
-    val, err = parse_stake(parts[2])
+    val, err = parse_amount_strict(parts[2])
     if err: return await message.reply(err)
     uses = int(parts[3])
     promos[code] = {"amount": val, "uses": uses, "users": []}
@@ -551,6 +559,7 @@ async def game_x50(message: Message):
                 profit = -b["stake"]
                 add_leaderboard_profit(u_id, profit)
                 result_text += f"{b['name']} {b['stake']:,} — проигрыш ❌\n"
+                add_history(u_id, "Х50", f"-{b['stake']:,}")
         
         save_data()
         await message.bot.send_message(message.chat.id, result_text, parse_mode="Markdown")
