@@ -108,10 +108,11 @@ x50_bets = []
 x50_history = []
 x50_timer_task = None
 
-mw_round_active = False
 mw_bets = []
 mw_history = []
-mw_timer_task = None
+mw_task = None
+mw_last_msg_id = None
+mw_last_chat_id = None
 
 roulette_round_active = False
 roulette_bets = []
@@ -577,12 +578,14 @@ MW_SECTORS = {
 }
 
 async def run_mw_game(chat_id):
-    global mw_round_active, mw_bets, mw_timer_task
+    global mw_bets, mw_task, mw_last_msg_id, mw_last_chat_id
     
-    mw_round_active = False
     await asyncio.sleep(15)
     
-    mw_round_active = True
+    if not mw_bets:
+        mw_task = None
+        return
+
     total_bank = sum(b["stake"] for b in mw_bets)
     unique_players = len(set(b["user_id"] for b in mw_bets))
     
@@ -601,7 +604,18 @@ async def run_mw_game(chat_id):
         f"🎪 Определение результата..."
     )
     
-    prep_msg = await bot.send_message(chat_id, prep_text, parse_mode="Markdown")
+    target_chat_id = chat_id if chat_id else mw_last_chat_id
+    if mw_last_msg_id and target_chat_id:
+        try:
+            await bot.edit_message_text(prep_text, chat_id=target_chat_id, message_id=mw_last_msg_id, parse_mode="Markdown")
+            prep_msg_id = mw_last_msg_id
+        except Exception:
+            prep_msg = await bot.send_message(target_chat_id, prep_text, parse_mode="Markdown")
+            prep_msg_id = prep_msg.message_id
+    else:
+        prep_msg = await bot.send_message(target_chat_id, prep_text, parse_mode="Markdown")
+        prep_msg_id = prep_msg.message_id
+
     await asyncio.sleep(3)
     
     sectors_list = [1, 2, 5, 8, 10, 15, 20, 40]
@@ -623,8 +637,9 @@ async def run_mw_game(chat_id):
     
     current_bets = mw_bets.copy()
     mw_bets.clear()
-    mw_round_active = False
-    mw_timer_task = asyncio.create_task(run_mw_game(chat_id))
+    mw_task = None
+    mw_last_msg_id = None
+    mw_last_chat_id = None
 
     categories = [
         ("1", "❄️ 1x:"),
@@ -667,18 +682,13 @@ async def run_mw_game(chat_id):
     ])
     
     try:
-        await prep_msg.edit_text(result_text, reply_markup=repeat_kb, parse_mode="Markdown")
+        await bot.edit_message_text(result_text, chat_id=target_chat_id, message_id=prep_msg_id, reply_markup=repeat_kb, parse_mode="Markdown")
     except Exception:
-        await bot.send_message(chat_id, result_text, reply_markup=repeat_kb, parse_mode="Markdown")
+        await bot.send_message(target_chat_id, result_text, reply_markup=repeat_kb, parse_mode="Markdown")
 
 @dp.message(F.text.lower().startswith("мв") | F.text.lower().startswith("мегавил") | F.text.lower().startswith("mw"))
 async def game_megawheel(message: Message):
-    global mw_bets, mw_timer_task
-    if mw_round_active:
-        return await message.reply("⚠️ Ставки на этот раунд закрыты!", parse_mode="Markdown")
-
-    if not mw_timer_task:
-        mw_timer_task = asyncio.create_task(run_mw_game(message.chat.id))
+    global mw_bets, mw_task, mw_last_msg_id, mw_last_chat_id
 
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
@@ -710,17 +720,37 @@ async def game_megawheel(message: Message):
         "stake": stake,
         "sector": sector_arg
     })
-    
+
+    mw_last_chat_id = message.chat.id
+    total_bank = sum(b["stake"] for b in mw_bets)
+    unique_players = len(set(b["user_id"] for b in mw_bets))
+
+    status_text = (
+        f"🎡 **MegaWheel**\n\n"
+        f"⏳ **Раунд скоро начнется! (15 секунд)**\n"
+        f"👥 Игроков: **{unique_players}**\n"
+        f"💰 Общий банк: **{total_bank:,} гиф**\n\n"
+        f"💬 Успейте сделать ставку (`мв [ставка] [сектор]`)!"
+    )
+
+    if mw_task is None:
+        msg = await message.reply(status_text, parse_mode="Markdown")
+        mw_last_msg_id = msg.message_id
+        mw_task = asyncio.create_task(run_mw_game(message.chat.id))
+    else:
+        if mw_last_msg_id:
+            try:
+                await bot.edit_message_text(status_text, chat_id=message.chat.id, message_id=mw_last_msg_id, parse_mode="Markdown")
+            except Exception:
+                pass
+        await message.reply(f"🎡 **{user['name']}** поставил **{stake:,} гиф** на {sec_emo} **{sector_arg}x**", parse_mode="Markdown")
+        return
+
     await message.reply(f"🎡 **{user['name']}** поставил **{stake:,} гиф** на {sec_emo} **{sector_arg}x**", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "mw_repeat_bet")
 async def cb_mw_repeat_bet(cb: CallbackQuery):
-    global mw_bets, mw_timer_task
-    if mw_round_active:
-        return await cb.answer("⚠️ Ставки на этот раунд закрыты!", show_alert=True)
-
-    if not mw_timer_task:
-        mw_timer_task = asyncio.create_task(run_mw_game(cb.message.chat.id))
+    global mw_bets, mw_task, mw_last_msg_id, mw_last_chat_id
 
     uid = cb.from_user.id
     user = get_user(uid, cb.from_user.first_name)
@@ -750,6 +780,29 @@ async def cb_mw_repeat_bet(cb: CallbackQuery):
     
     await cb.answer("🔁 Ставки повторены!")
     
+    mw_last_chat_id = cb.message.chat.id
+    total_bank = sum(b["stake"] for b in mw_bets)
+    unique_players = len(set(b["user_id"] for b in mw_bets))
+
+    status_text = (
+        f"🎡 **MegaWheel**\n\n"
+        f"⏳ **Раунд скоро начнется! (15 секунд)**\n"
+        f"👥 Игроков: **{unique_players}**\n"
+        f"💰 Общий банк: **{total_bank:,} гиф**\n\n"
+        f"💬 Успейте сделать ставку (`мв [ставка] [сектор]`)!"
+    )
+
+    if mw_task is None:
+        msg = await cb.message.answer(status_text, parse_mode="Markdown")
+        mw_last_msg_id = msg.message_id
+        mw_task = asyncio.create_task(run_mw_game(cb.message.chat.id))
+    else:
+        if mw_last_msg_id:
+            try:
+                await bot.edit_message_text(status_text, chat_id=cb.message.chat.id, message_id=mw_last_msg_id, parse_mode="Markdown")
+            except Exception:
+                pass
+
     quote_text = (
         f"🔁 **{user['name']}** повторил свои ставки в **MegaWheel** (всего {total_needed:,} гиф):\n\n" +
         "\n".join(repeat_summary)
