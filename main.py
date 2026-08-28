@@ -29,7 +29,6 @@ user_history = {}
 pending_roulette_stakes = {}
 lb_data = {"last_reset": datetime.now().isoformat(), "earnings": {}}
 
-# Х50 СОҢҒЫ СТАВКАЛАРДЫ САҚТАУ
 x50_last_bets = {}
 
 def load_data():
@@ -154,7 +153,7 @@ def add_history(user_id: int, game_name: str, text: str):
     if len(user_history[user_id]) > 10:
         user_history[user_id].pop()
 
-# --- КӨПТІЛДІ СОМАЛАРДЫ ПАРСИНГТЕУ ---
+# --- ТҮЗЕТІЛГЕН СТАВКА ПАРСИНГІ ---
 
 def parse_amount_strict(text_arg: str):
     val = text_arg.lower().strip().replace(',', '.')
@@ -185,6 +184,9 @@ def parse_amount_strict(text_arg: str):
         return 0, "⚠️ Неверный формат суммы!"
 
 def parse_stake(text_arg: str, user_balance: int):
+    if user_balance <= 0:
+        return 0, "⚠️ У вас **0** гиф на балансе!"
+
     val = text_arg.lower().strip()
     if val in ["все", "вабанк", "всё", "all", "всего", "мв", "мегавил"]:
         stake = user_balance
@@ -193,8 +195,6 @@ def parse_stake(text_arg: str, user_balance: int):
         if err:
             return 0, err
 
-    if user_balance <= 0:
-        return 0, "⚠️ У вас **0** гиф на балансе!"
     if stake <= 0:
         return 0, "⚠️ Ставка должна быть больше 0!"
     if stake > user_balance:
@@ -634,14 +634,14 @@ async def game_x50(message: Message):
     if len(parts) < 3:
         return await message.reply("⚠️ Пример: `х50 50к ч`", parse_mode="Markdown")
     
-    stake, err = parse_stake(parts[1], user["balance"])
-    if err:
-        return await message.reply(err, parse_mode="Markdown")
-    
     choice_code = parts[2].lower()
     if choice_code not in X50_COLOR_MAP:
         return await message.reply("⚠️ Ошибка! Выберите цвет: `ч`, `ф`, `к` или `з`", parse_mode="Markdown")
 
+    stake, err = parse_stake(parts[1], user["balance"])
+    if err:
+        return await message.reply(err, parse_mode="Markdown")
+    
     is_all_in = parts[1].lower() in ["все", "вабанк", "всё", "all", "всего", "мв", "мегавил"]
     user["balance"] -= stake
     save_data()
@@ -652,7 +652,6 @@ async def game_x50(message: Message):
                 "ф" if choice_code in ["ф", "фиолетовый", "фиолетовое", "p", "purple"] else \
                 "к" if choice_code in ["к", "красный", "красное", "r", "red"] else "з"
 
-    # Соңғы ставкометті сақтаймыз
     x50_last_bets[message.from_user.id] = {
         "stake": stake,
         "choice": norm_code
@@ -670,7 +669,6 @@ async def game_x50(message: Message):
 
     asyncio.create_task(start_x50_timer(message.chat.id))
 
-# Х50 — ПОВТОРИТЬ СТАВКУ (ТҮЙМЕСІН БАСҚАНДА)
 @dp.callback_query(F.data == "x50_repeat_bet")
 async def cb_x50_repeat_bet(cb: CallbackQuery):
     uid = cb.from_user.id
@@ -812,7 +810,7 @@ async def process_hilo_action(cb: CallbackQuery):
             parse_mode="Markdown"
         )
 
-# --- ИГРА РАЙЗ С 7 ЭТАЖАМИ ---
+# --- ИГРА РАЙЗ ---
 
 RISE_STAGES = [
     {"step": 1, "bombs": 2, "gems": 3, "mult": 1.25},
@@ -1254,7 +1252,7 @@ async def cmd_roulette_log(message: Message):
     if not roulette_history: return await message.reply("📃 История рулетки пуста.")
     await message.reply("📃 **История рулетки:**\n" + "\n".join(f"• {item}" for item in roulette_history), parse_mode="Markdown")
 
-# --- СЛОТЫ (ЖАҢАРТЫЛҒАН ӘДЕМИ ДИЗАЙН ЖӘНЕ КӨПТҮРЛІ ЭМОДЖИЛЕР) ---
+# --- СЛОТЫ ---
 
 SLOT_SYMBOLS = ["🍋", "🍒", "7️⃣", "🔔", "💎", "⭐", "🍉", "🍇", "☃️", "🍭"]
 
@@ -1282,7 +1280,6 @@ async def game_slots(message: Message):
     await asyncio.sleep(0.3)
     c = [random.choice(SLOT_SYMBOLS) for _ in range(3)]
     
-    # Множитель есептеу логикасы
     multiplier = 0.0
     if c[0] == c[1] == c[2]:
         if c[0] in ["💎", "7️⃣", "⭐"]:
