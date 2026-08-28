@@ -137,7 +137,7 @@ def add_history(user_id: int, game_name: str, text: str):
     if len(user_history[user_id]) > 10:
         user_history[user_id].pop()
 
-def parse_stake(text_arg: str, user_balance: int):
+def parse_stake(text_arg: str, user_balance: int = 999_999_999_999_999_999):
     val = text_arg.lower().strip()
     if val in ["все", "вабанк", "всё"]:
         stake = user_balance
@@ -237,11 +237,11 @@ async def cmd_admin_give(message: Message):
     if len(parts) < 2:
         return await message.reply("⚠️ Пример: `выдать 1000кк`", parse_mode="Markdown")
     
-    val = parts[1].lower()
-    if val in ["все", "всё"]:
+    val_str = parts[1].lower()
+    if val_str in ["все", "всё"]:
         amount = 100_000_000_000_000
     else:
-        amount, err = parse_stake(val, 999_999_999_999_999_999)
+        amount, err = parse_stake(parts[1])
         if err: return await message.reply(err)
         
     if amount < 100:
@@ -307,7 +307,8 @@ async def cmd_admin_global_nakid(message: Message):
     parts = message.text.split()
     if len(parts) < 3:
         return await message.reply("⚠️ Пример: `global nakid 100к`", parse_mode="Markdown")
-    amount, err = parse_stake(parts[2], 999_999_999_999_999_999)
+    
+    amount, err = parse_stake(parts[2])
     if err:
         return await message.reply(err)
     
@@ -400,7 +401,7 @@ async def cmd_create_promo(message: Message):
     parts = message.text.split()
     if len(parts) < 4: return await message.reply("⚠️ Пример: `создатьпромо КОД 100к 5`")
     code = parts[1].upper()
-    val, err = parse_stake(parts[2], 999_999_999_999_999_999)
+    val, err = parse_stake(parts[2])
     if err: return await message.reply(err)
     uses = int(parts[3])
     promos[code] = {"amount": val, "uses": uses, "users": []}
@@ -550,7 +551,6 @@ async def game_x50(message: Message):
                 profit = -b["stake"]
                 add_leaderboard_profit(u_id, profit)
                 result_text += f"{b['name']} {b['stake']:,} — проигрыш ❌\n"
-                add_history(u_id, "Х50", f"-{b['stake']:,}")
         
         save_data()
         await message.bot.send_message(message.chat.id, result_text, parse_mode="Markdown")
