@@ -31,6 +31,8 @@ lb_data = {"last_reset": datetime.now().isoformat(), "earnings": {}}
 
 x50_last_bets = {}
 mw_last_bets = {}
+hunt_last_bets = {}
+slots_last_bets = {}
 
 def load_data():
     global db, promos, lb_data
@@ -107,6 +109,8 @@ x50_round_active = False
 x50_bets = []
 x50_history = []
 x50_timer_task = None
+x50_last_msg_id = None
+x50_last_chat_id = None
 
 mw_bets = []
 mw_history = []
@@ -581,7 +585,7 @@ MW_SECTORS = {
 async def run_mw_game(chat_id):
     global mw_bets, mw_task, mw_last_msg_id, mw_last_chat_id, mw_round_counter
     
-    await asyncio.sleep(15)
+    await asyncio.sleep(12)
     
     if not mw_bets:
         mw_task = None
@@ -589,27 +593,15 @@ async def run_mw_game(chat_id):
 
     mw_round_counter += 1
 
-    total_bank = sum(b["stake"] for b in mw_bets)
-    unique_players = len(set(b["user_id"] for b in mw_bets))
-    
     surprise_mult = 1
-    surprise_text = ""
     trigger_rounds = random.choice([3, 4, 5, 6, 7, 8])
     if mw_round_counter >= trigger_rounds:
         mw_round_counter = 0
         surprise_mult = random.choice([5, 10, 100])
-        surprise_text = f"🎁 **БОНУСНЫЙ МУЛЬТИПЛИКАТОР:** 🔥 **x{surprise_mult}**!\n\n"
 
-    prep_text = (
-        f"🎡 **MegaWheel**\n\n"
-        f"🎲 **Рулетка айналуда... (3 сек)**\n\n"
-        f"👥 Игроков: **{unique_players}**\n"
-        f"💰 Общий банк: **{total_bank:,} гиф**\n\n"
-        f"{surprise_text}"
-        f"🎪 Результат күтілуде..."
-    )
-    
     target_chat_id = chat_id if chat_id else mw_last_chat_id
+    prep_text = "🎡 **Мегавил айналуда...** 🔄"
+    
     if mw_last_msg_id and target_chat_id:
         try:
             await bot.edit_message_text(prep_text, chat_id=target_chat_id, message_id=mw_last_msg_id, parse_mode="Markdown")
@@ -621,7 +613,7 @@ async def run_mw_game(chat_id):
         prep_msg = await bot.send_message(target_chat_id, prep_text, parse_mode="Markdown")
         prep_msg_id = prep_msg.message_id
 
-    await asyncio.sleep(3)
+    await asyncio.sleep(12)
     
     sectors_list = [1, 2, 5, 8, 10, 15, 20, 40]
     weights = [35, 25, 15, 10, 8, 5, 1, 1]
@@ -635,7 +627,7 @@ async def run_mw_game(chat_id):
     mw_history.insert(0, f"{win_emo} {win_sector_num}x" + (f" (x{surprise_mult} бонус)" if surprise_mult > 1 else ""))
     if len(mw_history) > 10: mw_history.pop()
 
-    result_text = f"🎡 **MegaWheel нәтижесі:** {win_emo} **{win_sector_num}x**"
+    result_text = f"🎡 **Результат Мегавил:** {win_emo} **{win_sector_num}x**"
     if surprise_mult > 1:
         result_text += f" *(🎁 Бонус x{surprise_mult} = 🔥 **{final_mult}x**)*"
     result_text += "\n\n"
@@ -727,19 +719,10 @@ async def game_megawheel(message: Message):
     })
 
     mw_last_chat_id = message.chat.id
-    total_bank = sum(b["stake"] for b in mw_bets)
-    unique_players = len(set(b["user_id"] for b in mw_bets))
-
-    status_text = (
-        f"🎡 **MegaWheel**\n\n"
-        f"⏳ **Раунд скоро начнется! (15 секунд)**\n"
-        f"👥 Игроков: **{unique_players}**\n"
-        f"💰 Общий банк: **{total_bank:,} гиф**\n\n"
-        f"💬 Успейте сделать ставку (`мв [ставка] [сектор]`)!"
-    )
+    status_text = "🎡 **Мегавил айналуда...** 🔄"
 
     if mw_task is None:
-        msg = await message.reply(status_text, parse_mode="Markdown")
+        msg = await message.reply(f"Фрик поставил {stake:,} gif на {sector_arg}х{sec_emo}", parse_mode="Markdown")
         mw_last_msg_id = msg.message_id
         mw_task = asyncio.create_task(run_mw_game(message.chat.id))
     else:
@@ -748,10 +731,10 @@ async def game_megawheel(message: Message):
                 await bot.edit_message_text(status_text, chat_id=message.chat.id, message_id=mw_last_msg_id, parse_mode="Markdown")
             except Exception:
                 pass
-        await message.reply(f"🎡 **{user['name']}** поставил **{stake:,} гиф** на {sec_emo} **{sector_arg}x**", parse_mode="Markdown")
+        await message.reply(f"Фрик поставил {stake:,} gif на {sector_arg}х{sec_emo}", parse_mode="Markdown")
         return
 
-    await message.reply(f"🎡 **{user['name']}** поставил **{stake:,} гиф** на {sec_emo} **{sector_arg}x**", parse_mode="Markdown")
+    await message.reply(f"Фрик поставил {stake:,} gif на {sector_arg}х{sec_emo}", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "mw_repeat_bet")
 async def cb_mw_repeat_bet(cb: CallbackQuery):
@@ -772,30 +755,18 @@ async def cb_mw_repeat_bet(cb: CallbackQuery):
     user["balance"] -= total_needed
     save_data()
     
-    repeat_summary = []
     for sec, stake in last_bets_dict.items():
-        sec_emo, _ = MW_SECTORS[sec]
         mw_bets.append({
             "user_id": uid,
             "name": user["name"],
             "stake": stake,
             "sector": sec
         })
-        repeat_summary.append(f"> **{stake:,} гиф** на {sec_emo} **{sec}x**")
     
     await cb.answer("🔁 Ставки повторены!")
     
     mw_last_chat_id = cb.message.chat.id
-    total_bank = sum(b["stake"] for b in mw_bets)
-    unique_players = len(set(b["user_id"] for b in mw_bets))
-
-    status_text = (
-        f"🎡 **MegaWheel**\n\n"
-        f"⏳ **Раунд скоро начнется! (15 секунд)**\n"
-        f"👥 Игроков: **{unique_players}**\n"
-        f"💰 Общий банк: **{total_bank:,} гиф**\n\n"
-        f"💬 Успейте сделать ставку (`мв [ставка] [сектор]`)!"
-    )
+    status_text = "🎡 **Мегавил айналуда...** 🔄"
 
     if mw_task is None:
         msg = await cb.message.answer(status_text, parse_mode="Markdown")
@@ -808,11 +779,9 @@ async def cb_mw_repeat_bet(cb: CallbackQuery):
             except Exception:
                 pass
 
-    quote_text = (
-        f"🔁 **{user['name']}** повторил свои ставки в **MegaWheel** (всего {total_needed:,} гиф):\n\n" +
-        "\n".join(repeat_summary)
-    )
-    await cb.message.answer(quote_text, parse_mode="Markdown")
+    for sec, stake in last_bets_dict.items():
+        sec_emo, _ = MW_SECTORS[sec]
+        await cb.message.answer(f"Фрик поставил {stake:,} gif на {sec}х{sec_emo}", parse_mode="Markdown")
 
 @dp.message(F.text.lower() == "вилог")
 async def cmd_mw_log(message: Message):
@@ -835,10 +804,9 @@ X50_COLOR_MAP = {
 }
 
 async def run_x50_game(chat_id):
-    global x50_round_active, x50_bets, x50_timer_task
+    global x50_round_active, x50_bets, x50_timer_task, x50_last_msg_id, x50_last_chat_id
     
-    # 15 секунд күтеміз (ойыншылар ставка жасап үлгеруі үшін)
-    await asyncio.sleep(15)
+    await asyncio.sleep(12)
     
     if not x50_bets:
         x50_round_active = False
@@ -847,8 +815,19 @@ async def run_x50_game(chat_id):
 
     x50_round_active = True
     
-    prep_msg = await bot.send_message(chat_id, "🎡 **Рулетка X50 айналуда...** 🔄", parse_mode="Markdown")
-    await asyncio.sleep(3)
+    target_chat_id = chat_id if chat_id else x50_last_chat_id
+    prep_text = "🎡 **Рулетка X50 айналуда...** 🔄"
+    
+    if x50_last_msg_id and target_chat_id:
+        try:
+            await bot.edit_message_text(prep_text, chat_id=target_chat_id, message_id=x50_last_msg_id, parse_mode="Markdown")
+            prep_msg_id = x50_last_msg_id
+        except Exception:
+            prep_msg = await bot.send_message(target_chat_id, prep_text, parse_mode="Markdown")
+            prep_msg_id = prep_msg.message_id
+    else:
+        prep_msg = await bot.send_message(target_chat_id, prep_text, parse_mode="Markdown")
+        prep_msg_id = prep_msg.message_id
 
     roll = random.random()
     if roll < 0.50: mult_str, mult, code, emo = "x2", 2, "ч", "⚫️"
@@ -859,12 +838,14 @@ async def run_x50_game(chat_id):
     x50_history.insert(0, f"{emo} {mult_str}")
     if len(x50_history) > 10: x50_history.pop()
 
-    result_text = f"🎡 **Рулетка X50 нәтижесі:** {emo} **{mult_str}**\n\n"
+    result_text = f"🎡 **Результат рулетки X50:** {emo} **{mult_str}**\n\n"
     
     current_bets = x50_bets.copy()
     x50_bets.clear()
     x50_round_active = False
     x50_timer_task = None
+    x50_last_msg_id = None
+    x50_last_chat_id = None
 
     categories = [
         ("ч", "⚫️ Ставки на x2:"),
@@ -903,13 +884,13 @@ async def run_x50_game(chat_id):
     ])
     
     try:
-        await prep_msg.edit_text(result_text, reply_markup=repeat_kb, parse_mode="Markdown")
+        await bot.edit_message_text(result_text, chat_id=target_chat_id, message_id=prep_msg_id, reply_markup=repeat_kb, parse_mode="Markdown")
     except Exception:
-        await bot.send_message(chat_id, result_text, reply_markup=repeat_kb, parse_mode="Markdown")
+        await bot.send_message(target_chat_id, result_text, reply_markup=repeat_kb, parse_mode="Markdown")
 
 @dp.message(F.text.lower().startswith("х50") | F.text.lower().startswith("x50"))
 async def game_x50(message: Message):
-    global x50_bets, x50_timer_task
+    global x50_bets, x50_timer_task, x50_last_msg_id, x50_last_chat_id
 
     user = get_user(message.from_user.id, message.from_user.first_name)
     parts = message.text.split()
@@ -924,7 +905,6 @@ async def game_x50(message: Message):
     if err:
         return await message.reply(err, parse_mode="Markdown")
     
-    is_all_in = parts[1].lower() in ["все", "вабанк", "всё", "all", "всего"]
     user["balance"] -= stake
     save_data()
     
@@ -947,15 +927,27 @@ async def game_x50(message: Message):
         "choice": norm_code
     })
     
-    if x50_timer_task is None:
-        x50_timer_task = asyncio.create_task(run_x50_game(message.chat.id))
+    x50_last_chat_id = message.chat.id
+    status_text = "🎡 **Рулетка X50 айналуда...** 🔄"
 
-    all_in_txt = " 🔥 *(ВА-БАНК!)*" if is_all_in else ""
-    await message.reply(f"{color_emo} **{user['name']}** поставил **{stake:,} гиф** на {color_emo} {mult_str}{all_in_txt}\n⏳ Раунд запустится через 15 секунд!", parse_mode="Markdown")
+    if x50_timer_task is None:
+        msg = await message.reply(f"Фрик поставил {stake:,} gif на {mult_str}{color_emo}", parse_mode="Markdown")
+        x50_last_msg_id = msg.message_id
+        x50_timer_task = asyncio.create_task(run_x50_game(message.chat.id))
+    else:
+        if x50_last_msg_id:
+            try:
+                await bot.edit_message_text(status_text, chat_id=message.chat.id, message_id=x50_last_msg_id, parse_mode="Markdown")
+            except Exception:
+                pass
+        await message.reply(f"Фрик поставил {stake:,} gif на {mult_str}{color_emo}", parse_mode="Markdown")
+        return
+
+    await message.reply(f"Фрик поставил {stake:,} gif на {mult_str}{color_emo}", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "x50_repeat_bet")
 async def cb_x50_repeat_bet(cb: CallbackQuery):
-    global x50_bets, x50_timer_task
+    global x50_bets, x50_timer_task, x50_last_msg_id, x50_last_chat_id
 
     uid = cb.from_user.id
     user = get_user(uid, cb.from_user.first_name)
@@ -972,27 +964,33 @@ async def cb_x50_repeat_bet(cb: CallbackQuery):
     user["balance"] -= total_needed
     save_data()
     
-    repeat_summary = []
     for norm_code, stake in last_bets_dict.items():
-        color_emo, mult_str, _ = X50_COLOR_MAP[norm_code]
         x50_bets.append({
             "user_id": uid,
             "name": user["name"],
             "stake": stake,
             "choice": norm_code
         })
-        repeat_summary.append(f"> **{stake:,}** на {color_emo} **{mult_str}**")
     
+    x50_last_chat_id = cb.message.chat.id
+    status_text = "🎡 **Рулетка X50 айналуда...** 🔄"
+
     if x50_timer_task is None:
+        msg = await cb.message.answer(status_text, parse_mode="Markdown")
+        x50_last_msg_id = msg.message_id
         x50_timer_task = asyncio.create_task(run_x50_game(cb.message.chat.id))
+    else:
+        if x50_last_msg_id:
+            try:
+                await bot.edit_message_text(status_text, chat_id=cb.message.chat.id, message_id=x50_last_msg_id, parse_mode="Markdown")
+            except Exception:
+                pass
 
     await cb.answer("🔁 Ставки повторены!")
     
-    quote_text = (
-        f"🔁 **{user['name']}** повторил ставки в игре **Х50** (всего {total_needed:,} гиф):\n\n" +
-        "\n".join(repeat_summary)
-    )
-    await cb.message.answer(quote_text, parse_mode="Markdown")
+    for norm_code, stake in last_bets_dict.items():
+        color_emo, mult_str, _ = X50_COLOR_MAP[norm_code]
+        await cb.message.answer(f"Фрик поставил {stake:,} gif на {mult_str}{color_emo}", parse_mode="Markdown")
 
 @dp.message(F.text.lower() == "дроп")
 async def cmd_drop(message: Message):
@@ -1556,6 +1554,7 @@ async def game_slots(message: Message):
         return await message.reply(err, parse_mode="Markdown")
     
     user["balance"] -= stake
+    slots_last_bets[uid] = stake
     save_data()
     
     msg = await message.reply("🎰 [ 🔄 │ 🔄 │ 🔄 ]")
@@ -1580,6 +1579,10 @@ async def game_slots(message: Message):
         multiplier = random.choice([1.5, 1.8, 2.0])
     else:
         multiplier = 0.0
+
+    repeat_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔁 Повторить ставку", callback_data="slots_repeat_bet")]
+    ])
 
     if multiplier > 0:
         win = int(stake * multiplier)
@@ -1616,7 +1619,87 @@ async def game_slots(message: Message):
             f"> 📈 **Множитель:** x0"
         )
         
-    await msg.edit_text(txt, parse_mode="Markdown")
+    await msg.edit_text(txt, reply_markup=repeat_kb, parse_mode="Markdown")
+
+@dp.callback_query(F.data == "slots_repeat_bet")
+async def cb_slots_repeat_bet(cb: CallbackQuery):
+    uid = cb.from_user.id
+    user = get_user(uid, cb.from_user.first_name)
+    
+    if uid not in slots_last_bets:
+        return await cb.answer("⚠️ У вас нет сохраненных ставок в Слотах!", show_alert=True)
+    
+    stake = slots_last_bets[uid]
+    if user["balance"] < stake:
+        return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {stake:,} гиф, у вас: {user['balance']:,}", show_alert=True)
+    
+    user["balance"] -= stake
+    save_data()
+    await cb.answer("🔁 Ставка повторена!")
+    
+    msg = await cb.message.answer("🎰 [ 🔄 │ 🔄 │ 🔄 ]")
+    
+    for _ in range(3):
+        await asyncio.sleep(0.3)
+        tmp = [random.choice(SLOT_SYMBOLS) for _ in range(3)]
+        await msg.edit_text(f"🎰 [ {tmp[0]} │ {tmp[1]} │ {tmp[2]} ]")
+    
+    await asyncio.sleep(0.3)
+    c = [random.choice(SLOT_SYMBOLS) for _ in range(3)]
+    
+    multiplier = 0.0
+    if c[0] == c[1] == c[2]:
+        if c[0] in ["💎", "7️⃣", "⭐"]:
+            multiplier = 10.0
+        elif c[0] in ["🔔", "🍒", "🍇", "🍉"]:
+            multiplier = 5.0
+        else:
+            multiplier = 3.5
+    elif c[0] == c[1] or c[1] == c[2] or c[0] == c[2]:
+        multiplier = random.choice([1.5, 1.8, 2.0])
+    else:
+        multiplier = 0.0
+
+    repeat_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔁 Повторить ставку", callback_data="slots_repeat_bet")]
+    ])
+
+    if multiplier > 0:
+        win = int(stake * multiplier)
+        user["balance"] += win
+        profit = win - stake
+        add_leaderboard_profit(uid, profit)
+        save_data()
+        
+        txt = (
+            f"🎰 **СЛОТЫ**\n\n"
+            f"> 👤 **Игрок:** {user['name']}\n"
+            f"> 💵 **Ставка:** {stake:,} гиф\n"
+            f"> \n"
+            f"> │ {c[0]} │ {c[1]} │ {c[2]} │\n"
+            f"> \n"
+            f"> 🎉 **ВЫИГРЫШ!**\n"
+            f"> 💰 **Получено:** +{win:,} гиф\n"
+            f"> 📈 **Множитель:** x{multiplier}"
+        )
+    else:
+        profit = -stake
+        add_leaderboard_profit(uid, profit)
+        save_data()
+        
+        txt = (
+            f"🎰 **СЛОТЫ**\n\n"
+            f"> 👤 **Игрок:** {user['name']}\n"
+            f"> 💵 **Ставка:** {stake:,} гиф\n"
+            f"> \n"
+            f"> │ {c[0]} │ {c[1]} │ {c[2]} │\n"
+            f"> \n"
+            f"> 💔 **ПРОИГРЫШ!**\n"
+            f"> 💰 **Потеряно:** -{stake:,} гиф\n"
+            f"> 📈 **Множитель:** x0"
+        )
+        
+    await msg.edit_text(txt, reply_markup=repeat_kb, parse_mode="Markdown")
 
 # --- БАСҚА ИГРЫ ---
 
@@ -1667,6 +1750,7 @@ async def game_hunt(message: Message):
         return await message.reply(err, parse_mode="Markdown")
     
     user["balance"] -= stake
+    hunt_last_bets[uid] = stake
     save_data()
     
     scenarios = [
@@ -1679,18 +1763,65 @@ async def game_hunt(message: Message):
     msg = await message.reply(random.choice(scenarios))
     await asyncio.sleep(3)
     
+    repeat_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔁 Повторить ставку", callback_data="hunt_repeat_bet")]
+    ])
+    
     if random.random() > 0.45:
         win = int(stake * 1.88)
         user["balance"] += win
         profit = win - stake
         add_leaderboard_profit(uid, profit)
         save_data()
-        await msg.edit_text(f"🎯 **Успешная охота!** Выигрыш: **+{win:,}**", parse_mode="Markdown")
+        await msg.edit_text(f"🎯 **Успешная охота!** Выигрыш: **+{win:,}**", reply_markup=repeat_kb, parse_mode="Markdown")
     else:
         profit = -stake
         add_leaderboard_profit(uid, profit)
         save_data()
-        await msg.edit_text(f"🎯 **Неудача!** Ставка сгорела: **-{stake:,}** 💔", parse_mode="Markdown")
+        await msg.edit_text(f"🎯 **Неудача!** Ставка сгорела: **-{stake:,}** 💔", reply_markup=repeat_kb, parse_mode="Markdown")
+
+@dp.callback_query(F.data == "hunt_repeat_bet")
+async def cb_hunt_repeat_bet(cb: CallbackQuery):
+    uid = cb.from_user.id
+    user = get_user(uid, cb.from_user.first_name)
+    
+    if uid not in hunt_last_bets:
+        return await cb.answer("⚠️ У вас нет сохраненных ставок в Охоте!", show_alert=True)
+    
+    stake = hunt_last_bets[uid]
+    if user["balance"] < stake:
+        return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {stake:,} гиф, у вас: {user['balance']:,}", show_alert=True)
+    
+    user["balance"] -= stake
+    save_data()
+    await cb.answer("🔁 Ставка повторена!")
+    
+    scenarios = [
+        "🌲 Вы отправились в глухой ночной лес в поисках дичи. Точный выстрел!",
+        "🏜️ Жаркая пустыня. Из-за бархана показался редкий зверь. Вы прицелились...",
+        "⛰️ Скалистые горы. Затаив дыхание, вы производите выстрел по горному барсу...",
+        "🌊 Густые джунгли у реки. Из воды появился гигантский аллигатор!"
+    ]
+    
+    msg = await cb.message.answer(random.choice(scenarios))
+    await asyncio.sleep(3)
+    
+    repeat_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔁 Повторить ставку", callback_data="hunt_repeat_bet")]
+    ])
+    
+    if random.random() > 0.45:
+        win = int(stake * 1.88)
+        user["balance"] += win
+        profit = win - stake
+        add_leaderboard_profit(uid, profit)
+        save_data()
+        await msg.edit_text(f"🎯 **Успешная охота!** Выигрыш: **+{win:,}**", reply_markup=repeat_kb, parse_mode="Markdown")
+    else:
+        profit = -stake
+        add_leaderboard_profit(uid, profit)
+        save_data()
+        await msg.edit_text(f"🎯 **Неудача!** Ставка сгорела: **-{stake:,}** 💔", reply_markup=repeat_kb, parse_mode="Markdown")
 
 # --- МИНЫ ---
 
