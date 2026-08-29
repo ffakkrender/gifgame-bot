@@ -13,7 +13,7 @@ from aiogram.types import (
 
 RAW_TOKEN = "8990102475:AAFqraA1U4mfwodck74OIJl-VVEA3blWebk" 
 BOT_TOKEN = RAW_TOKEN.strip()
-ADMIN_IDS = {816157991, 7842338512}
+ADMIN_IDS = {816157991, 7842338512, 5944399192, 8528356564}
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
