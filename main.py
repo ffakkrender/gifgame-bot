@@ -198,7 +198,7 @@ def parse_amount_strict(text_arg: str):
 
 def parse_stake(text_arg: str, user_balance: int):
     if user_balance <= 0:
-        return 0, "⚠️ У вас **0** гиф на балансе!"
+        return 0, "⚠️ У вас **0** глифов на балансе!"
 
     val = text_arg.lower().strip()
     if val in ["все", "вабанк", "всё", "all", "всего"]:
@@ -211,7 +211,7 @@ def parse_stake(text_arg: str, user_balance: int):
     if stake <= 0:
         return 0, "⚠️ Ставка должна быть больше 0!"
     if stake > user_balance:
-        return 0, f"⚠️ Недостаточно средств! Ваш баланс: **{user_balance:,}** гиф"
+        return 0, f"⚠️ Недостаточно средств! Ваш баланс: **{user_balance:,}** глифов"
         
     return stake, None
 
@@ -252,14 +252,14 @@ async def cmd_leaderboard(message: Message):
     text = "📊 **Таблица лидеров (в плюсе):**\n\n"
     for idx in range(5):
         place = idx + 1
-        reward_txt = f"Награда {rewards[idx]:,} гиф"
+        reward_txt = f"Награда {rewards[idx]:,} глифов"
         if idx < len(sorted_lb):
             uid, earn = sorted_lb[idx]
             u_obj = db.get(uid)
             name = u_obj["name"] if u_obj else "Игрок"
-            text += f"{place}. {name} — +{earn:,} гиф\n   🎁 {reward_txt}\n"
+            text += f"{place}. {name} — +{earn:,} глифов\n   🎁 {reward_txt}\n"
         else:
-            text += f"{place}. Вакантно — 0 гиф\n   🎁 {reward_txt}\n"
+            text += f"{place}. Вакантно — 0 глифов\n   🎁 {reward_txt}\n"
             
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_lb")]
@@ -277,14 +277,14 @@ async def cb_refresh_lb(cb: CallbackQuery):
     text = "📊 **Таблица лидеров (в плюсе):**\n\n"
     for idx in range(5):
         place = idx + 1
-        reward_txt = f"Награда {rewards[idx]:,} гиф"
+        reward_txt = f"Награда {rewards[idx]:,} глифов"
         if idx < len(sorted_lb):
             uid, earn = sorted_lb[idx]
             u_obj = db.get(uid)
             name = u_obj["name"] if u_obj else "Игрок"
-            text += f"{place}. {name} — +{earn:,} гиф\n   🎁 {reward_txt}\n"
+            text += f"{place}. {name} — +{earn:,} глифов\n   🎁 {reward_txt}\n"
         else:
-            text += f"{place}. Вакантно — 0 гиф\n   🎁 {reward_txt}\n"
+            text += f"{place}. Вакантно — 0 глифов\n   🎁 {reward_txt}\n"
             
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_lb")]
@@ -357,7 +357,7 @@ async def cmd_admin_reset_kuroven(message: Message):
     target_user["transfer_limit_lvl"] = 1
     target_user["transfer_limit"] = 50000
     save_data()
-    await message.reply(f"🔄 Уровень лимита игрока **{target_user['name']}** сброшен до базового (1-й уровень, лимит 50,000 гиф).", parse_mode="Markdown")
+    await message.reply(f"🔄 Уровень лимита игрока **{target_user['name']}** сброшен до базового (1-й уровень, лимит 50,000 глифов).", parse_mode="Markdown")
 
 @dp.message(F.text.lower() == "max kuroven")
 async def cmd_admin_max_kuroven(message: Message):
@@ -392,7 +392,7 @@ async def cmd_admin_global_nakid(message: Message):
         db[uid]["balance"] += amount
         count += 1
     save_data()
-    await message.reply(f"🌍 Всем игрокам ({count} чел.) на баланс добавлено: **{amount:,}** гиф!", parse_mode="Markdown")
+    await message.reply(f"🌍 Всем игрокам ({count} чел.) на баланс добавлено: **{amount:,}** глифов!", parse_mode="Markdown")
 
 @dp.message(F.text.lower().startswith("дать") | F.text.lower().startswith("give"))
 async def cmd_transfer(message: Message):
@@ -406,7 +406,7 @@ async def cmd_transfer(message: Message):
         return await message.reply(err, parse_mode="Markdown")
     
     if user["transfer_limit_lvl"] < 10 and stake > user["transfer_limit"]:
-        return await message.reply(f"⚠️ Ваш лимит перевода: **{user['transfer_limit']:,} гиф**!\nЧтобы повысить лимит: `куровень`", parse_mode="Markdown")
+        return await message.reply(f"⚠️ Ваш лимит перевода: **{user['transfer_limit']:,} глифов**!\nЧтобы повысить лимит: `куровень`", parse_mode="Markdown")
         
     target_id = message.reply_to_message.from_user.id
     if target_id == message.from_user.id:
@@ -442,10 +442,10 @@ async def cmd_up_transfer_limit(message: Message):
     cost = cfg["cost"]
     
     if user["balance"] < cost:
-        limit_text = "Бесконечно (∞)" if next_lvl == 10 else f"{cfg['limit']:,} гиф"
+        limit_text = "Бесконечно (∞)" if next_lvl == 10 else f"{cfg['limit']:,} глифов"
         return await message.reply(
             f"⚠️ **Повышение лимита ({next_lvl}-й уровень):**\n"
-            f"💰 Стоимость: **{cost:,} гиф**\n"
+            f"💰 Стоимость: **{cost:,} глифов**\n"
             f"📈 Новый лимит: **{limit_text}**\n\n"
             f"У вас недостаточно средств на балансе!", parse_mode="Markdown"
         )
@@ -459,7 +459,7 @@ async def cmd_up_transfer_limit(message: Message):
         
     save_data()
     
-    new_limit_str = "Бесконечно (∞) ♾️" if next_lvl == 10 else f"{user['transfer_limit']:,} гиф"
+    new_limit_str = "Бесконечно (∞) ♾️" if next_lvl == 10 else f"{user['transfer_limit']:,} глифов"
     await message.reply(f"🚀 Успешно! Уровень повышен: **Lvl {next_lvl}**\n💸 Новый лимит перевода: **{new_limit_str}**", parse_mode="Markdown")
 
 @dp.message(F.text.lower().in_({"🏆 топ", "топ", "top"}))
@@ -515,7 +515,7 @@ async def cmd_short_bank(message: Message):
 @dp.message(F.text.lower().in_({"👤 профиль", "профиль", "profile"}))
 async def cmd_profile(message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
-    limit_str = "Бесконечно (∞) ♾️" if user["transfer_limit_lvl"] == 10 else f"{user['transfer_limit']:,} гиф"
+    limit_str = "Бесконечно (∞) ♾️" if user["transfer_limit_lvl"] == 10 else f"{user['transfer_limit']:,} глифов"
     await message.reply(
         f"👤 **ПРОФИЛЬ**\n🆔 ID: `{message.from_user.id}`\n"
         f"✏️ Ник: **{user['name']}**\n"
@@ -585,7 +585,7 @@ MW_SECTORS = {
 async def run_mw_game(chat_id):
     global mw_bets, mw_task, mw_last_msg_id, mw_last_chat_id, mw_round_counter
     
-    await asyncio.sleep(12)
+    await asyncio.sleep(15)
     
     if not mw_bets:
         mw_task = None
@@ -593,14 +593,29 @@ async def run_mw_game(chat_id):
 
     mw_round_counter += 1
 
+    total_bank = sum(b["stake"] for b in mw_bets)
+    unique_players = len(set(b["user_id"] for b in mw_bets))
+    
     surprise_mult = 1
+    surprise_text = ""
     trigger_rounds = random.choice([3, 4, 5, 6, 7, 8])
     if mw_round_counter >= trigger_rounds:
         mw_round_counter = 0
         surprise_mult = random.choice([5, 10, 100])
+        sec_keys = list(MW_SECTORS.keys())
+        rand_sec = random.choice(sec_keys)
+        rand_emo, _ = MW_SECTORS[rand_sec]
+        surprise_text = f"⚡ БОНУСНЫЙ СЕКТОР: {surprise_mult}x {rand_emo}\n⭐ Повышенный шанс выпада!\n\n"
 
     target_chat_id = chat_id if chat_id else mw_last_chat_id
-    prep_text = "🎡 **Мегавил айналуда...** 🔄"
+    prep_text = (
+        f"🎡 Megawheel\n\n"
+        f"🎲 Крутим колесо...\n\n"
+        f"👥 Игроков: {unique_players}\n"
+        f"💰 Общий банк: {total_bank:,}\n\n"
+        f"{surprise_text}"
+        f"🎪 Определяем результат..."
+    )
     
     if mw_last_msg_id and target_chat_id:
         try:
@@ -613,7 +628,7 @@ async def run_mw_game(chat_id):
         prep_msg = await bot.send_message(target_chat_id, prep_text, parse_mode="Markdown")
         prep_msg_id = prep_msg.message_id
 
-    await asyncio.sleep(12)
+    await asyncio.sleep(15)
     
     sectors_list = [1, 2, 5, 8, 10, 15, 20, 40]
     weights = [35, 25, 15, 10, 8, 5, 1, 1]
@@ -627,10 +642,7 @@ async def run_mw_game(chat_id):
     mw_history.insert(0, f"{win_emo} {win_sector_num}x" + (f" (x{surprise_mult} бонус)" if surprise_mult > 1 else ""))
     if len(mw_history) > 10: mw_history.pop()
 
-    result_text = f"🎡 **Результат Мегавил:** {win_emo} **{win_sector_num}x**"
-    if surprise_mult > 1:
-        result_text += f" *(🎁 Бонус x{surprise_mult} = 🔥 **{final_mult}x**)*"
-    result_text += "\n\n"
+    result_text = f"🎡 MegaWheel: {win_emo} {win_sector_num}x\n\n"
     
     current_bets = mw_bets.copy()
     mw_bets.clear()
@@ -638,39 +650,34 @@ async def run_mw_game(chat_id):
     mw_last_msg_id = None
     mw_last_chat_id = None
 
-    categories = [
-        ("1", "❄️ 1x:"),
-        ("2", "🔵 2x:"),
-        ("5", "🟢 5x:"),
-        ("8", "🟡 8x:"),
-        ("10", "🟠 10x:"),
-        ("15", "🔴 15x:"),
-        ("20", "🟣 20x:"),
-        ("40", "🔥 40x:")
-    ]
+    grouped_bets = {}
+    for b in current_bets:
+        sec = b["sector"]
+        if sec not in grouped_bets:
+            grouped_bets[sec] = []
+        grouped_bets[sec].append(b)
 
-    for cat_code, cat_title in categories:
-        cat_bets = [b for b in current_bets if b["sector"] == cat_code]
-        if cat_bets:
-            result_text += f"{cat_title}\n"
-            for b in cat_bets:
-                u_id = b["user_id"]
-                u_obj = db.get(u_id)
-                is_win = (b["sector"] == win_sector_code)
-                if is_win:
-                    win_amount = b["stake"] * final_mult
-                    if u_obj:
-                        u_obj["balance"] += win_amount
-                    profit = win_amount - b["stake"]
-                    add_leaderboard_profit(u_id, profit)
-                    result_text += f"💸 **{b['name']}** — ставка {b['stake']:,} → **+{win_amount:,} гиф ({final_mult}x)** ✅\n"
-                    add_history(u_id, "Мегавил", f"+{win_amount:,}")
-                else:
-                    profit = -b["stake"]
-                    add_leaderboard_profit(u_id, profit)
-                    result_text += f"❌ **{b['name']}** — ставка {b['stake']:,} → 0 гиф\n"
-                    add_history(u_id, "Мегавил", f"-{b['stake']:,}")
-            result_text += "\n"
+    for sec_code, bets_list in grouped_bets.items():
+        sec_emo, _ = MW_SECTORS[sec_code]
+        result_text += f"{sec_emo} Ставки на {sec_code}x:\n"
+        for b in bets_list:
+            u_id = b["user_id"]
+            u_obj = db.get(u_id)
+            is_win = (b["sector"] == win_sector_code)
+            if is_win:
+                win_amount = b["stake"] * final_mult
+                if u_obj:
+                    u_obj["balance"] += win_amount
+                profit = win_amount - b["stake"]
+                add_leaderboard_profit(u_id, profit)
+                result_text += f"✅ {b['name']} — ставка {b['stake']:,} → +{win_amount:,} глифов ({final_mult}x)\n"
+                add_history(u_id, "Мегавил", f"+{win_amount:,}")
+            else:
+                profit = -b["stake"]
+                add_leaderboard_profit(u_id, profit)
+                result_text += f"❌ {b['name']} — ставка {b['stake']:,} → 0 глифов\n"
+                add_history(u_id, "Мегавил", f"-{b['stake']:,}")
+        result_text += "\n"
     
     save_data()
     
@@ -722,7 +729,7 @@ async def game_megawheel(message: Message):
     status_text = "🎡 **Мегавил айналуда...** 🔄"
 
     if mw_task is None:
-        msg = await message.reply(f"Фрик поставил {stake:,} gif на {sector_arg}х{sec_emo}", parse_mode="Markdown")
+        msg = await message.reply(f"{sec_emo} [{user['name']}] поставил {stake:,} глифов на {sector_arg}x в MegaWheel", parse_mode="Markdown")
         mw_last_msg_id = msg.message_id
         mw_task = asyncio.create_task(run_mw_game(message.chat.id))
     else:
@@ -731,10 +738,7 @@ async def game_megawheel(message: Message):
                 await bot.edit_message_text(status_text, chat_id=message.chat.id, message_id=mw_last_msg_id, parse_mode="Markdown")
             except Exception:
                 pass
-        await message.reply(f"Фрик поставил {stake:,} gif на {sector_arg}х{sec_emo}", parse_mode="Markdown")
-        return
-
-    await message.reply(f"Фрик поставил {stake:,} gif на {sector_arg}х{sec_emo}", parse_mode="Markdown")
+        await message.reply(f"{sec_emo} [{user['name']}] поставил {stake:,} глифов на {sector_arg}x в MegaWheel", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "mw_repeat_bet")
 async def cb_mw_repeat_bet(cb: CallbackQuery):
@@ -750,7 +754,7 @@ async def cb_mw_repeat_bet(cb: CallbackQuery):
     total_needed = sum(last_bets_dict.values())
     
     if user["balance"] < total_needed:
-        return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {total_needed:,} гиф, у вас: {user['balance']:,}", show_alert=True)
+        return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {total_needed:,} глифов, у вас: {user['balance']:,}", show_alert=True)
     
     user["balance"] -= total_needed
     save_data()
@@ -781,7 +785,7 @@ async def cb_mw_repeat_bet(cb: CallbackQuery):
 
     for sec, stake in last_bets_dict.items():
         sec_emo, _ = MW_SECTORS[sec]
-        await cb.message.answer(f"Фрик поставил {stake:,} gif на {sec}х{sec_emo}", parse_mode="Markdown")
+        await cb.message.answer(f"{sec_emo} [{user['name']}] поставил {stake:,} глифов на {sec}x в MegaWheel", parse_mode="Markdown")
 
 @dp.message(F.text.lower() == "вилог")
 async def cmd_mw_log(message: Message):
@@ -806,7 +810,7 @@ X50_COLOR_MAP = {
 async def run_x50_game(chat_id):
     global x50_round_active, x50_bets, x50_timer_task, x50_last_msg_id, x50_last_chat_id
     
-    await asyncio.sleep(12)
+    await asyncio.sleep(15)
     
     if not x50_bets:
         x50_round_active = False
@@ -815,20 +819,6 @@ async def run_x50_game(chat_id):
 
     x50_round_active = True
     
-    target_chat_id = chat_id if chat_id else x50_last_chat_id
-    prep_text = "🎡 **Рулетка X50 айналуда...** 🔄"
-    
-    if x50_last_msg_id and target_chat_id:
-        try:
-            await bot.edit_message_text(prep_text, chat_id=target_chat_id, message_id=x50_last_msg_id, parse_mode="Markdown")
-            prep_msg_id = x50_last_msg_id
-        except Exception:
-            prep_msg = await bot.send_message(target_chat_id, prep_text, parse_mode="Markdown")
-            prep_msg_id = prep_msg.message_id
-    else:
-        prep_msg = await bot.send_message(target_chat_id, prep_text, parse_mode="Markdown")
-        prep_msg_id = prep_msg.message_id
-
     roll = random.random()
     if roll < 0.50: mult_str, mult, code, emo = "x2", 2, "ч", "⚫️"
     elif roll < 0.80: mult_str, mult, code, emo = "x3", 3, "ф", "🟣"
@@ -838,7 +828,7 @@ async def run_x50_game(chat_id):
     x50_history.insert(0, f"{emo} {mult_str}")
     if len(x50_history) > 10: x50_history.pop()
 
-    result_text = f"🎡 **Результат рулетки X50:** {emo} **{mult_str}**\n\n"
+    result_text = f"🎡 Рулетка X50: {emo} {mult_str}\n\n"
     
     current_bets = x50_bets.copy()
     x50_bets.clear()
@@ -868,12 +858,12 @@ async def run_x50_game(chat_id):
                         u_obj["balance"] += win_amount
                     profit = win_amount - b["stake"]
                     add_leaderboard_profit(u_id, profit)
-                    result_text += f"💸 **{b['name']}** — ставка {b['stake']:,} → **+{win_amount:,} гиф** ✅\n"
+                    result_text += f"✅ [{b['name']}] — ставка {b['stake']:,} → +{win_amount:,} глифов\n"
                     add_history(u_id, "Х50", f"+{win_amount:,}")
                 else:
                     profit = -b["stake"]
                     add_leaderboard_profit(u_id, profit)
-                    result_text += f"💸 **{b['name']}** — ставка {b['stake']:,} → 0 гиф ❌\n"
+                    result_text += f"❌ [{b['name']}] -- ставка {b['stake']:,} → 0 глифов\n"
                     add_history(u_id, "Х50", f"-{b['stake']:,}")
             result_text += "\n"
     
@@ -883,10 +873,14 @@ async def run_x50_game(chat_id):
         [InlineKeyboardButton(text="🔁 Повторить ставку", callback_data="x50_repeat_bet")]
     ])
     
-    try:
-        await bot.edit_message_text(result_text, chat_id=target_chat_id, message_id=prep_msg_id, reply_markup=repeat_kb, parse_mode="Markdown")
-    except Exception:
-        await bot.send_message(target_chat_id, result_text, reply_markup=repeat_kb, parse_mode="Markdown")
+    target_chat_id = chat_id if chat_id else x50_last_chat_id
+    if x50_last_msg_id and target_chat_id:
+        try:
+            await bot.edit_message_text(result_text, chat_id=target_chat_id, message_id=x50_last_msg_id, reply_markup=repeat_kb, parse_mode="Markdown")
+            return
+        except Exception:
+            pass
+    await bot.send_message(target_chat_id, result_text, reply_markup=repeat_kb, parse_mode="Markdown")
 
 @dp.message(F.text.lower().startswith("х50") | F.text.lower().startswith("x50"))
 async def game_x50(message: Message):
@@ -928,22 +922,13 @@ async def game_x50(message: Message):
     })
     
     x50_last_chat_id = message.chat.id
-    status_text = "🎡 **Рулетка X50 айналуда...** 🔄"
 
     if x50_timer_task is None:
-        msg = await message.reply(f"Фрик поставил {stake:,} gif на {mult_str}{color_emo}", parse_mode="Markdown")
+        msg = await message.reply(f"{color_emo} [{user['name']}] поставил {stake:,} глифов на x50", parse_mode="Markdown")
         x50_last_msg_id = msg.message_id
         x50_timer_task = asyncio.create_task(run_x50_game(message.chat.id))
     else:
-        if x50_last_msg_id:
-            try:
-                await bot.edit_message_text(status_text, chat_id=message.chat.id, message_id=x50_last_msg_id, parse_mode="Markdown")
-            except Exception:
-                pass
-        await message.reply(f"Фрик поставил {stake:,} gif на {mult_str}{color_emo}", parse_mode="Markdown")
-        return
-
-    await message.reply(f"Фрик поставил {stake:,} gif на {mult_str}{color_emo}", parse_mode="Markdown")
+        await message.reply(f"{color_emo} [{user['name']}] поставил {stake:,} глифов на x50", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "x50_repeat_bet")
 async def cb_x50_repeat_bet(cb: CallbackQuery):
@@ -959,7 +944,7 @@ async def cb_x50_repeat_bet(cb: CallbackQuery):
     total_needed = sum(last_bets_dict.values())
     
     if user["balance"] < total_needed:
-        return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {total_needed:,} гиф, баланс: {user['balance']:,}", show_alert=True)
+        return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {total_needed:,} глифов, баланс: {user['balance']:,}", show_alert=True)
     
     user["balance"] -= total_needed
     save_data()
@@ -973,24 +958,15 @@ async def cb_x50_repeat_bet(cb: CallbackQuery):
         })
     
     x50_last_chat_id = cb.message.chat.id
-    status_text = "🎡 **Рулетка X50 айналуда...** 🔄"
 
     if x50_timer_task is None:
-        msg = await cb.message.answer(status_text, parse_mode="Markdown")
+        msg = await cb.message.answer(f"🟢 [{user['name']}] поставил {total_needed:,} глифов на x50", parse_mode="Markdown")
         x50_last_msg_id = msg.message_id
         x50_timer_task = asyncio.create_task(run_x50_game(cb.message.chat.id))
     else:
-        if x50_last_msg_id:
-            try:
-                await bot.edit_message_text(status_text, chat_id=cb.message.chat.id, message_id=x50_last_msg_id, parse_mode="Markdown")
-            except Exception:
-                pass
+        await cb.message.answer(f"🟢 [{user['name']}] поставил {total_needed:,} глифов на x50", parse_mode="Markdown")
 
     await cb.answer("🔁 Ставки повторены!")
-    
-    for norm_code, stake in last_bets_dict.items():
-        color_emo, mult_str, _ = X50_COLOR_MAP[norm_code]
-        await cb.message.answer(f"Фрик поставил {stake:,} gif на {mult_str}{color_emo}", parse_mode="Markdown")
 
 @dp.message(F.text.lower() == "дроп")
 async def cmd_drop(message: Message):
@@ -1337,8 +1313,8 @@ async def game_roulette_start(message: Message):
                 
                 mult_txt = f"{mult}x" if mult > 0 else "-0.25x"
                 await message.reply(
-                    f"🎲 **{user['name']}** поставил **{stake:,} гиф** на диапазон `{r_min}-{r_max}` ({count} чисел, K: {mult_txt})\n"
-                    f"💸 Баланс: **{user['balance']:,} гиф**\n\n"
+                    f"🎲 **{user['name']}** поставил **{stake:,} глифов** на диапазон `{r_min}-{r_max}` ({count} чисел, K: {mult_txt})\n"
+                    f"💸 Баланс: **{user['balance']:,} глифов**\n\n"
                     f"💬 Напишите **го** для запуска рулетки!", parse_mode="Markdown"
                 )
                 return
@@ -1370,8 +1346,8 @@ async def game_roulette_start(message: Message):
             
             nums_str = " ".join(map(str, numbers_chosen))
             await message.reply(
-                f"🎲 **{user['name']}** поставил **{stake:,} гиф** на числа: `{nums_str}` (K: {mult}x)\n"
-                f"💸 Баланс: **{user['balance']:,} гиф**\n\n"
+                f"🎲 **{user['name']}** поставил **{stake:,} глифов** на числа: `{nums_str}` (K: {mult}x)\n"
+                f"💸 Баланс: **{user['balance']:,} глифов**\n\n"
                 f"💬 Напишите **го** для запуска рулетки!", parse_mode="Markdown"
             )
             return
@@ -1399,8 +1375,8 @@ async def game_roulette_start(message: Message):
         elif choice.isdigit(): choice_name = f"на число {choice} (34x)"
         
         await message.reply(
-            f"🎲 **{user['name']}** поставил **{stake:,} гиф** {choice_name}\n"
-            f"💸 Баланс: **{user['balance']:,} гиф**\n\n"
+            f"🎲 **{user['name']}** поставил **{stake:,} глифов** {choice_name}\n"
+            f"💸 Баланс: **{user['balance']:,} глифов**\n\n"
             f"💬 Напишите **го** для запуска рулетки!", parse_mode="Markdown"
         )
         return
@@ -1442,7 +1418,7 @@ async def process_roulette_choice(cb: CallbackQuery):
     elif choice_raw == "d2": choice_name = "на 2-ю дюжину (13-24)"
     elif choice_raw == "d3": choice_name = "на 3-ю дюжину (25-36)"
     
-    await cb.message.edit_text(f"🎲 Игрок **{user['name']}** поставил **{stake:,} гиф** {choice_name}\n💸 Баланс: **{user['balance']:,} гиф**\n\n💬 Напишите **го** для старта раунда!")
+    await cb.message.edit_text(f"🎲 Игрок **{user['name']}** поставил **{stake:,} глифов** {choice_name}\n💸 Баланс: **{user['balance']:,} глифов**\n\n💬 Напишите **го** для старта раунда!")
 
 @dp.message(F.text.lower().in_({"го", "гоу", "go"}))
 async def cmd_roulette_go(message: Message):
@@ -1481,11 +1457,11 @@ async def execute_roulette(message_obj):
                 u_obj["balance"] += win
                 profit = win - stake
                 add_leaderboard_profit(uid, profit)
-                res_msg += f"👤 {b['name']} ({stake:,} гиф) — выигрыш **+{win:,} гиф** ✅\n"
+                res_msg += f"👤 {b['name']} ({stake:,} глифов) — выигрыш **+{win:,} глифов** ✅\n"
             else:
                 profit = -stake
                 add_leaderboard_profit(uid, profit)
-                res_msg += f"👤 {b['name']} ({stake:,} гиф) — проигрыш ❌\n"
+                res_msg += f"👤 {b['name']} ({stake:,} глифов) — проигрыш ❌\n"
                 
         elif b_type == "numbers":
             chosen_nums = b["choices"]
@@ -1495,11 +1471,11 @@ async def execute_roulette(message_obj):
                 u_obj["balance"] += win
                 profit = win - stake
                 add_leaderboard_profit(uid, profit)
-                res_msg += f"👤 {b['name']} ({stake:,} гиф) — выигрыш **+{win:,} гиф** ✅\n"
+                res_msg += f"👤 {b['name']} ({stake:,} глифов) — выигрыш **+{win:,} глифов** ✅\n"
             else:
                 profit = -stake
                 add_leaderboard_profit(uid, profit)
-                res_msg += f"👤 {b['name']} ({stake:,} гиф) — проигрыш ❌\n"
+                res_msg += f"👤 {b['name']} ({stake:,} глифов) — проигрыш ❌\n"
         else:
             choice = str(b["choices"]).lower()
             mult = 0
@@ -1524,11 +1500,11 @@ async def execute_roulette(message_obj):
                 u_obj["balance"] += win
                 profit = win - stake
                 add_leaderboard_profit(uid, profit)
-                res_msg += f"👤 {b['name']} ({stake:,} гиф) — выигрыш **+{win:,} гиф** ✅\n"
+                res_msg += f"👤 {b['name']} ({stake:,} глифов) — выигрыш **+{win:,} глифов** ✅\n"
             else:
                 profit = -stake
                 add_leaderboard_profit(uid, profit)
-                res_msg += f"👤 {b['name']} ({stake:,} гиф) — проигрыш ❌\n"
+                res_msg += f"👤 {b['name']} ({stake:,} глифов) — проигрыш ❌\n"
 
     save_data()
     await message_obj.bot.send_message(message_obj.chat.id, res_msg, parse_mode="Markdown")
@@ -1594,12 +1570,12 @@ async def game_slots(message: Message):
         txt = (
             f"🎰 **СЛОТЫ**\n\n"
             f"> 👤 **Игрок:** {user['name']}\n"
-            f"> 💵 **Ставка:** {stake:,} гиф\n"
+            f"> 💵 **Ставка:** {stake:,} глифов\n"
             f"> \n"
             f"> │ {c[0]} │ {c[1]} │ {c[2]} │\n"
             f"> \n"
             f"> 🎉 **ВЫИГРЫШ!**\n"
-            f"> 💰 **Получено:** +{win:,} гиф\n"
+            f"> 💰 **Получено:** +{win:,} глифов\n"
             f"> 📈 **Множитель:** x{multiplier}"
         )
     else:
@@ -1610,12 +1586,12 @@ async def game_slots(message: Message):
         txt = (
             f"🎰 **СЛОТЫ**\n\n"
             f"> 👤 **Игрок:** {user['name']}\n"
-            f"> 💵 **Ставка:** {stake:,} гиф\n"
+            f"> 💵 **Ставка:** {stake:,} глифов\n"
             f"> \n"
             f"> │ {c[0]} │ {c[1]} │ {c[2]} │\n"
             f"> \n"
             f"> 💔 **ПРОИГРЫШ!**\n"
-            f"> 💰 **Потеряно:** -{stake:,} гиф\n"
+            f"> 💰 **Потеряно:** -{stake:,} глифов\n"
             f"> 📈 **Множитель:** x0"
         )
         
@@ -1631,7 +1607,7 @@ async def cb_slots_repeat_bet(cb: CallbackQuery):
     
     stake = slots_last_bets[uid]
     if user["balance"] < stake:
-        return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {stake:,} гиф, у вас: {user['balance']:,}", show_alert=True)
+        return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {stake:,} глифов, у вас: {user['balance']:,}", show_alert=True)
     
     user["balance"] -= stake
     save_data()
@@ -1674,12 +1650,12 @@ async def cb_slots_repeat_bet(cb: CallbackQuery):
         txt = (
             f"🎰 **СЛОТЫ**\n\n"
             f"> 👤 **Игрок:** {user['name']}\n"
-            f"> 💵 **Ставка:** {stake:,} гиф\n"
+            f"> 💵 **Ставка:** {stake:,} глифов\n"
             f"> \n"
             f"> │ {c[0]} │ {c[1]} │ {c[2]} │\n"
             f"> \n"
             f"> 🎉 **ВЫИГРЫШ!**\n"
-            f"> 💰 **Получено:** +{win:,} гиф\n"
+            f"> 💰 **Получено:** +{win:,} глифов\n"
             f"> 📈 **Множитель:** x{multiplier}"
         )
     else:
@@ -1690,12 +1666,12 @@ async def cb_slots_repeat_bet(cb: CallbackQuery):
         txt = (
             f"🎰 **СЛОТЫ**\n\n"
             f"> 👤 **Игрок:** {user['name']}\n"
-            f"> 💵 **Ставка:** {stake:,} гиф\n"
+            f"> 💵 **Ставка:** {stake:,} глифов\n"
             f"> \n"
             f"> │ {c[0]} │ {c[1]} │ {c[2]} │\n"
             f"> \n"
             f"> 💔 **ПРОИГРЫШ!**\n"
-            f"> 💰 **Потеряно:** -{stake:,} гиф\n"
+            f"> 💰 **Потеряно:** -{stake:,} глифов\n"
             f"> 📈 **Множитель:** x0"
         )
         
@@ -1790,7 +1766,7 @@ async def cb_hunt_repeat_bet(cb: CallbackQuery):
     
     stake = hunt_last_bets[uid]
     if user["balance"] < stake:
-        return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {stake:,} гиф, у вас: {user['balance']:,}", show_alert=True)
+        return await cb.answer(f"⚠️ Недостаточно средств! Требуется: {stake:,} глифов, у вас: {user['balance']:,}", show_alert=True)
     
     user["balance"] -= stake
     save_data()
